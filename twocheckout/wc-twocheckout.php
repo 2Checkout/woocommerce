@@ -1,0 +1,493 @@
+<?php
+/*
+  Plugin Name: 2Checkout Payment Gateway
+  Plugin URI:
+  Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
+  Version: 0.0.3
+  Author: 2Checkout
+  Author URI: https://www.2checkout.com
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+} // Exit if accessed directly
+
+/* Add a custom payment class to WC
+  ------------------------------------------------------------ */
+add_action( 'plugins_loaded', 'woocommerce_twocheckout');
+
+// Autoload whatever classes we need
+// They're required ONLY when "new" is called
+// Not prior to that, so there shouldn't be
+// Much if any performance issue
+//require_once plugin_dir_path(__FILE__) . 'autoload.php';
+
+function woocommerce_twocheckout() {
+	if ( ! class_exists( 'WC_Payment_Gateway' ) ) {
+		return;
+	} // if the WC payment gateway class is not available, do nothing
+	if ( class_exists( 'WC_Twocheckout' ) ) {
+		return;
+	}
+
+	/**
+	 * Class WC_Gateway_Twocheckout
+	 */
+	class WC_Gateway_Twocheckout extends WC_Payment_Gateway {
+
+		// Logging
+		public static $log_enabled = false;
+		public static $log = false;
+		private $seller_id;
+		private $secret_key;
+		private $test_order;
+		private $default_style;
+		private $custom_style;
+		private $debug;
+
+		/**
+		 * WC_Gateway_Twocheckout constructor.
+		 */
+		public function __construct() {
+			$this->id         = 'twocheckout';
+			$this->icon       = apply_filters( 'woocommerce_twocheckout_icon',
+				plugin_dir_url( __FILE__ ) . 'twocheckout.png' );
+			$this->plugin_name = '2Checkout 2PayJs over API';
+			$this->method_description = __( 'Secured 2Checkout card payments over API.', 'woocommerce' );
+			$this->has_fields = true;
+
+			// Load the settings
+			$this->init_form_fields();
+			$this->init_settings();
+
+			// Define user set variables
+			$this->title         = $this->get_option( 'title' );
+			$this->seller_id     = $this->get_option( 'seller_id' );
+			$this->secret_key    = $this->get_option( 'secret_key' );
+			$this->default_style = $this->get_option( 'default' );
+			$this->custom_style  = $this->get_option( 'style' );
+			$this->test_order    = $this->get_option( 'demo' );
+			$this->description   = $this->get_option( 'description' );
+			$this->debug         = $this->get_option( 'debug' );
+
+			self::$log_enabled = $this->debug;
+
+			// Actions
+			add_action( 'woocommerce_receipt_' . $this->id, [ $this, 'receipt_page' ] );
+
+			// Save options
+			add_action( 'woocommerce_update_options_payment_gateways_' . $this->id,
+				[ $this, 'process_admin_options' ] );
+
+			// Payment listener/API hook
+			add_action( 'woocommerce_api_2checkout_ipn', [ $this, 'check_ipn_response' ] );
+
+			if ( ! $this->is_valid_for_use() ) {
+				$this->enabled = false;
+			}
+
+		}
+
+		/**
+		 * Logging method
+		 *
+		 * @param string $message
+		 */
+		public static function log( $message ) {
+			if ( self::$log_enabled ) {
+				if ( empty( self::$log ) ) {
+					self::$log = new WC_Logger();
+				}
+				self::$log->add( 'twocheckout', $message );
+			}
+		}
+
+
+		/**
+		 * Admin Panel Options
+		 * - Options for bits like 'title' and availability on a country-by-country basis
+		 *
+		 * @since 1.0.0
+		 */
+		public function admin_options() {
+
+			require_once plugin_dir_path( __FILE__ ) . 'templates/admin-options.php';
+		}
+
+		/**
+		 * Initialise Gateway Settings Form Fields
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function init_form_fields() {
+			require_once plugin_dir_path( __FILE__ ) . 'templates/init_form_fields.php';
+			$this->form_fields = getTwoCheckoutFormFields();
+		}
+
+		/**
+		 * Generate the credit card payment form
+		 */
+		public function payment_fields() {
+
+			wp_enqueue_script( '2payjs', 'https://2pay-js.2checkout.com/v1/2pay.js' );
+			wp_enqueue_script( 'twocheckout_script', '/wp-content/plugins/twocheckout/assets/js/twocheckout.js' );
+			wp_enqueue_style( 'twocheckout_style', '/wp-content/plugins/twocheckout/assets/css/twocheckout.css' );
+			require_once plugin_dir_path( __FILE__ ) . 'templates/payment-fields.php';
+		}
+
+
+		/**
+		 * Check if this gateway is enabled and available in the user's country
+		 *
+		 * @access public
+		 * @return bool
+		 */
+		function is_valid_for_use() {
+			$supported_currencies = [
+				'AFN',
+				'ALL',
+				'DZD',
+				'ARS',
+				'AUD',
+				'AZN',
+				'BSD',
+				'BDT',
+				'BBD',
+				'BZD',
+				'BMD',
+				'BOB',
+				'BWP',
+				'BRL',
+				'GBP',
+				'BND',
+				'BGN',
+				'CAD',
+				'CLP',
+				'CNY',
+				'COP',
+				'CRC',
+				'HRK',
+				'CZK',
+				'DKK',
+				'DOP',
+				'XCD',
+				'EGP',
+				'EUR',
+				'FJD',
+				'GTQ',
+				'HKD',
+				'HNL',
+				'HUF',
+				'INR',
+				'IDR',
+				'ILS',
+				'JMD',
+				'JPY',
+				'KZT',
+				'KES',
+				'LAK',
+				'MMK',
+				'LBP',
+				'LRD',
+				'MOP',
+				'MYR',
+				'MVR',
+				'MRO',
+				'MUR',
+				'MXN',
+				'MAD',
+				'NPR',
+				'TWD',
+				'NZD',
+				'NIO',
+				'NOK',
+				'PKR',
+				'PGK',
+				'PEN',
+				'PHP',
+				'PLN',
+				'QAR',
+				'RON',
+				'RUB',
+				'WST',
+				'SAR',
+				'SCR',
+				'SGF',
+				'SBD',
+				'ZAR',
+				'KRW',
+				'LKR',
+				'SEK',
+				'CHF',
+				'SYP',
+				'THB',
+				'TOP',
+				'TTD',
+				'TRY',
+				'UAH',
+				'AED',
+				'USD',
+				'VUV',
+				'VND',
+				'XOF',
+				'YER'
+			];
+
+			if ( ! in_array( get_woocommerce_currency(),
+				apply_filters( 'woocommerce_twocheckout_supported_currencies', $supported_currencies ) ) ) {
+				return false;
+			}
+
+			return true;
+		}
+
+
+		/**
+		 * Process the payment and return the result
+		 *
+		 * @access public
+		 *
+		 * @param int $order_id
+		 *
+		 * @return array
+		 */
+		public function process_payment( $order_id ) {
+			global $woocommerce;
+			$post_data = $_POST;
+
+			$order       = new WC_Order( $order_id );
+			$total       = $order->get_total();
+			$customer_ip = $order->get_customer_ip_address();
+			require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+
+			$country_code = strtoupper( $order->get_billing_country() );
+			try {
+
+				$order_params = [
+					'Currency'          => get_woocommerce_currency(),
+					'Language'          => strtoupper( substr( get_locale(), 0, 2 ) ),
+					'Country'           => $country_code,
+					'CustomerIP'        => $customer_ip,
+					'Source'            => 'WOOCOMMERCE_3_8',
+					'ExternalReference' => $order_id,
+					'Items'             => $this->get_item( $total ),
+					'BillingDetails'    => $this->get_billing_details( $post_data, $country_code ),
+					'PaymentDetails'    => $this->get_payment_details(
+						$post_data['ess_token'],
+						$customer_ip,
+						$this->get_return_url( $order ),
+						$woocommerce->cart->get_cart_url()
+					)
+				];
+
+				$api = new Two_Checkout_Api();
+				$api->set_seller_id( $this->seller_id );
+				$api->set_secret_key( $this->secret_key );
+				$api_response = $api->call( 'orders', $order_params );
+
+				if ( ! $api_response ) { // we dont get any response from 2co
+					$error_message = __( 'The payment could not be processed for order ' . $order_id . '! Please try again or contact us.' );
+					wc_add_notice( __( 'Payment error:', 'woothemes' ) . $error_message, 'error' );
+					$json_response = [
+						'result'   => 'error',
+						'messages' => $error_message,
+						'refresh'  => true,
+						'reload'   => false,
+						'redirect' => null
+					];
+				} else {
+					if ( $api_response['Errors'] ) { // errors that must be shown to the client
+						$error_message = '';
+						foreach ( $api_response['Errors'] as $key => $value ) {
+							$error_message .= $value . PHP_EOL;
+						}
+						wc_add_notice( __( 'Payment error: ' . $error_message, 'woothemes' ), 'error' );
+						$json_response = [
+							'result'   => 'error',
+							'messages' => $error_message,
+							'refresh'  => true,
+							'reload'   => false,
+							'redirect' => null
+						];
+					} else {
+						$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
+
+						$has3ds = false;
+						if( isset($api_response['PaymentDetails']['PaymentMethod']['Authorize3DS']) ) {
+							$has3ds = $this->has_authorize_3DS( $api_response['PaymentDetails']['PaymentMethod']['Authorize3DS'] );
+						}
+						if ( $has3ds ) {
+							$redirect_url  = $has3ds;
+							$json_response = [
+								'result'   => 'success',
+								'messages' => '3dSecure Redirect',
+								'type'     => '3ds_redirect',
+								'refresh'  => true,
+								'reload'   => false,
+								'redirect' => $redirect_url
+							];
+						} else {
+							$json_response = [
+								'result'   => 'success',
+								'messages' => 'Order payment success',
+								'refresh'  => true,
+								'reload'   => false,
+								'redirect' => $this->get_return_url( $order )
+							];
+						}
+					}
+				}
+
+				return $json_response;
+			} catch ( Exception $e ) {
+				wc_add_notice( $e->getMessage(), $notice_type = 'error' );
+
+				return false;
+			}
+		}
+
+
+		/**
+		 * @param array $post_data
+		 * @param string $country_code
+		 *
+		 * @return array
+		 */
+		private function get_billing_details( array $post_data, string $country_code ) {
+			$address = [
+				'Address1'    => $post_data['billing_address_1'],
+				'City'        => $post_data['billing_city'],
+				'State'       => $post_data['billing_state'],
+				'CountryCode' => $country_code,
+				'Email'       => $post_data['billing_email'],
+				'FirstName'   => $post_data['billing_first_name'],
+				'LastName'    => $post_data['billing_last_name'],
+				'Phone'       => $post_data['billing_phone'],
+				'Zip'         => $post_data['billing_postcode'],
+				'Company'     => $post_data['billing_company']
+			];
+
+			if ( $post_data['billing_address_2'] ) {
+				$address['Address2'] = $post_data['billing_address_2'];
+			}
+
+			return $address;
+		}
+
+		/**
+		 * for safety reasons we only send one Item with the grand total and the Cart_id as ProductName (identifier)
+		 * sending products order as ONE we dont have to calculate the total fee of the order (product price, tax, discounts etc)
+		 *
+		 * @param float $total
+		 *
+		 * @return array
+		 */
+		private function get_item( float $total ) {
+			$items[] = [
+				'Code'             => null,
+				'Quantity'         => 1,
+				'Name'             => get_bloginfo(),
+				'Description'      => 'N/A',
+				'RecurringOptions' => null,
+				'IsDynamic'        => true,
+				'Tangible'         => false,
+				'PurchaseType'     => 'PRODUCT',
+				'Price'            => [
+					'Amount' => number_format( $total, 2, '.', '' ),
+					'Type'   => 'CUSTOM'
+				]
+			];
+
+			return $items;
+		}
+
+		/**
+		 * @param string $token
+		 * @param string $customer_ip
+		 * @param string $success_url
+		 * @param string $cancel_url
+		 *
+		 * @return array
+		 */
+		private function get_payment_details(
+			string $token,
+			string $customer_ip,
+			string $success_url,
+			string $cancel_url
+		) {
+
+			return [
+				'Type'          => strtolower( $this->test_order ) === 'yes' ? 'TEST' : 'EES_TOKEN_PAYMENT',
+				'Currency'      => get_woocommerce_currency(),
+				'CustomerIP'    => $customer_ip,
+				'PaymentMethod' => [
+					'EesToken'           => $token,
+					'Vendor3DSReturnURL' => $success_url,
+					'Vendor3DSCancelURL' => $cancel_url
+				],
+			];
+		}
+
+		/**
+		 * @param mixed $has3ds
+		 *
+		 * @return string|null
+		 */
+		private function has_authorize_3DS( $has3ds ) {
+			if ( isset( $has3ds ) && isset( $has3ds['Href'] ) && ! empty( $has3ds['Href'] ) ) {
+
+				return $has3ds['Href'] . '?avng8apitoken=' . $has3ds['Params']['avng8apitoken'];
+			}
+
+			return null;
+		}
+
+
+		/**
+		 * Validate & process 2Checkout request
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function check_ipn_response() {
+			if ( $_SERVER['REQUEST_METHOD'] === 'GET' ) {
+				return;
+			}
+			$params = $_POST;
+			unset( $params['wc-api'] );
+			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
+				$order = wc_get_order( $params['REFNOEXT'] );
+				if ( $order && $order->get_payment_method() == 'twocheckout' ) {
+					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelper.php';
+					try {
+						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->debug, $order );
+					} catch ( Exception $ex ) {
+						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
+						throw new Exception( 'An error occurred!' );
+					}
+					if ( ! $ipn_helper->is_ipn_response_valid() ) {
+						self::log( sprintf( 'MD5 hash mismatch for 2Checkout IPN with date: "%s" . ',
+							$params['IPN_DATE'] ) );
+
+						return;
+					}
+					$ipn_helper->process_ipn();
+				}
+			}
+		}
+	}
+
+	/**
+	 * @param $methods
+	 *
+	 * @return array
+	 */
+	function add_twocheckout_gateway_api( $methods ) {
+		$methods[] = 'WC_Gateway_Twocheckout';
+
+		return $methods;
+	}
+
+	add_filter( 'woocommerce_payment_gateways', 'add_twocheckout_gateway_api' );
+}

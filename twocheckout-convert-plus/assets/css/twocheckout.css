@@ -1,0 +1,121 @@
+
+#tcoApiForm .form-control:focus, .input-group.focus {
+    outline: none;
+}
+
+#tcoApiForm .btn-primary:hover {
+    background-color: #26A0BA;
+}
+
+#tcoApiForm .btn-primary {
+    box-shadow: 2px 2px 4px 0 rgba(0, 0, 0, .2);
+    text-transform: uppercase;
+    border-radius: 2px;
+    font-weight: 600;
+    margin-top: 25px;
+    padding: .5rem 1.25rem;
+    color: #FFF;
+    background-color: #2FB5D2;
+    border-color: transparent;
+}
+
+#tcoApiForm button:disabled,
+#tcoApiForm button[disabled] {
+    cursor: not-allowed;
+}
+
+#tcoApiForm .btn:hover {
+    text-decoration: none;
+}
+
+#tcoApiForm .btn {
+    font-weight: 400;
+    line-height: 1.25;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
+    cursor: pointer;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    border: 1px solid transparent;
+    padding: 10px 20px;
+    font-size: 15px;
+    border-radius: 0;
+}
+
+#tcoWait .text img {
+    display: inline-block;
+    margin-right: 10px;
+    width: 30px;
+    top: 10px;
+    position: relative;
+}
+
+#tcoWait .text {
+    position: absolute;
+    top: calc(50% - 22px);
+    left: calc(50% - 100px);
+    color: #222;
+    font-size: 14px;
+    line-height: 40px;
+}
+
+#tcoWait {
+    text-align: center;
+    width: 100%;
+    display: none;
+    height: 100%;
+    top: 0;
+    left: 0;
+    position: absolute;
+    color: #4939E4;
+    z-index: 99;
+    background: rgba(255, 255, 255, 0.75);
+}
+
+#tcoApiForm button:focus {
+    outline: none;
+}
+
+#placeOrderTco {
+    display: none;
+}
+
+#load {
+    font-size: 15px;
+    text-align: center;
+    color: #888;
+}
+
+#tcoApiForm {
+    padding: 10px 15px;
+    position: relative;
+    border: 1px solid #DDD;
+    border-radius: 5px;
+    box-shadow: 3px 3px 7px #DDD;
+    font-family: Helvetica, sans-serif;
+}
+
+.wc_payment_method .payment_box,
+.wc_payment_method .payment_box fieldset {
+    background: #FFF;
+}
+
+.wc_payment_method .payment_box fieldset {
+    padding: 0;
+}
+
+.woocommerce-checkout ul.woocommerce-error li {
+    padding: 0;
+    font-size: 12px;
+}
+
+@media (max-width: 400px) {
+    #tcoApiForm {
+        padding: 10px;
+        border: 0;
+        box-shadow: none;
+    }
+}

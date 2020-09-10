@@ -1,0 +1,6 @@
+*~
+*/tests/
+*.DS_Store
+*.swp
+*phpunit.xml
+

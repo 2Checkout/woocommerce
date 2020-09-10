@@ -1,0 +1,14 @@
+.wc_payment_method .payment_box,
+.wc_payment_method .payment_box fieldset {
+    background: #FFF;
+}
+
+.wc_payment_method .payment_box fieldset {
+    padding: 0;
+}
+
+.woocommerce-checkout ul.woocommerce-error li {
+    padding: 0;
+    font-size: 12px;
+}
+
