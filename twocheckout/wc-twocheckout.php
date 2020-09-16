@@ -285,9 +285,12 @@ function woocommerce_twocheckout() {
 				$api->set_seller_id( $this->seller_id );
 				$api->set_secret_key( $this->secret_key );
 				$api_response = $api->call( 'orders', $order_params );
-
-				if ( ! $api_response ) { // we dont get any response from 2co
-					$error_message = __( 'The payment could not be processed for order ' . $order_id . '! Please try again or contact us.' );
+				if ( !$api_response || isset($api_response['error_code']) && !empty($api_response['error_code']) ) { // we dont get any response from 2co or internal account related error
+					if ( $api_response && isset($api_response['message']) && !empty($api_response['message']) ) {
+						$error_message = $api_response['message'];
+					} else {
+						$error_message = __( 'The payment could not be processed for order ' . $order_id . '! Please try again or contact us.' );
+					}
 					wc_add_notice( __( 'Payment error:', 'woothemes' ) . $error_message, 'error' );
 					$json_response = [
 						'result'   => 'error',
