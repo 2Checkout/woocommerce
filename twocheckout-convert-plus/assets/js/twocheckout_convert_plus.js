@@ -8,13 +8,17 @@ function buyLinkPay(){
         url: wc_checkout_params.checkout_url,
         success: function (response) {
             if(response.result === "success") {
-                let payload = JSON.parse(response.payload);
-                if( 'url' in response) {
-                    let url = response.url;
-                    window.location.href = url + jQuery.param(payload);
-                }
-                else{
-                    jQuery('#tco_convert_plus_error').html('An error occurred. Please try again!');
+                if(typeof response.payload !== "undefined"){
+                    let payload = JSON.parse(response.payload);
+                    if( 'url' in response) {
+                        let url = response.url;
+                        window.location.href = url + jQuery.param(payload);
+                    }
+                    else{
+                        jQuery('#tco_convert_plus_error').html('An error occurred. Please try again!');
+                    }
+                }else if(typeof response.redirect !== "undefined"){
+                    window.location.href = response.redirect;
                 }
             }
 
