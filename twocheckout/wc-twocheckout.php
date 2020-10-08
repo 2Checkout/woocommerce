@@ -82,6 +82,10 @@ function woocommerce_twocheckout() {
 			// Payment listener/API hook
 			add_action( 'woocommerce_api_2checkout_ipn', [ $this, 'check_ipn_response' ] );
 
+			// Order Page filter
+			// add_filter( 'woocommerce_available_payment_gateways', array( $this, 'prepare_order_pay_page' ) );
+			add_action( 'woocommerce_pay_order_after_submit', array( $this, 'render_additional_order_page_fields' ) );
+
 			if ( ! $this->is_valid_for_use() ) {
 				$this->enabled = false;
 			}
@@ -277,7 +281,7 @@ function woocommerce_twocheckout() {
 						$post_data['ess_token'],
 						$customer_ip,
 						$this->get_return_url( $order ),
-						$woocommerce->cart->get_cart_url()
+						wc_get_cart_url()
 					)
 				];
 
@@ -477,6 +481,31 @@ function woocommerce_twocheckout() {
 					}
 					$ipn_helper->process_ipn();
 				}
+			}
+		}
+
+		/**
+		 * Render additional order page fields
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function render_additional_order_page_fields( $order = null ) {
+			if ( ! isset( $order ) || empty( $order ) ) {
+				$order = wc_get_order( absint( get_query_var( 'order-pay' ) ) );
+			}
+
+			if ( isset( $order ) ) {
+				echo '<input type="hidden" name="billing_first_name" value="' . esc_attr( $order->get_billing_first_name() ) . '" />';
+				echo '<input type="hidden" name="billing_last_name" value="' . esc_attr( $order->get_billing_last_name() ) . '" />';
+				echo '<input type="hidden" name="billing_address_1" value="' . esc_attr( $order->get_billing_address_1() ) . '" />';
+				echo '<input type="hidden" name="billing_address_2" value="' . esc_attr( $order->get_billing_address_2() ) . '" />';
+				echo '<input type="hidden" name="billing_city" value="' . esc_attr( $order->get_billing_city() ) . '" />';
+				echo '<input type="hidden" name="billing_state" value="' . esc_attr( $order->get_billing_state() ) . '" />';
+				echo '<input type="hidden" name="billing_postcode" value="' . esc_attr( $order->get_billing_postcode() ) . '" />';
+				echo '<input type="hidden" name="billing_phone" value="' . esc_attr( $order->get_billing_phone() ) . '" />';
+				echo '<input type="hidden" name="billing_email" value="' . esc_attr( $order->get_billing_email() ) . '" />';
+				echo '<input type="hidden" name="billing_company" value="' . esc_attr( $order->get_billing_company() ) . '" />';
 			}
 		}
 	}

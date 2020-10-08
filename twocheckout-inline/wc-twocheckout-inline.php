@@ -102,6 +102,11 @@ function woocommerce_twocheckout_inline() {
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_style' ] );
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_script' ] );
 
+			add_action( 'woocommerce_api_twocheckout_inline_handle_payment_request', [ $this, 'handle_payment_request' ] );
+
+			// Order Page filter
+			add_action( 'woocommerce_pay_order_after_submit', array( $this, 'render_additional_order_page_fields' ) );
+
 		}
 
 		function enqueue_style() {
@@ -420,6 +425,45 @@ function woocommerce_twocheckout_inline() {
 					}
 					$ipn_helper->process_ipn();
 				}
+			}
+		}
+
+		/**
+		 * ajax callable wrapper for process_payment
+		 *
+		 * @access public
+		 * @return array
+		 */
+		public function handle_payment_request() {
+			ob_start();
+			if ( $_SERVER['REQUEST_METHOD'] !== 'POST' || ! isset( $_POST['woocommerce-pay-nonce'] ) || ! isset( $_POST['order_id'] ) ) {
+				return;
+			}
+
+			$nonce_value = $_POST['woocommerce-pay-nonce'];
+
+			if ( ! wp_verify_nonce( $nonce_value, 'woocommerce-pay' ) ) {
+			    return;
+			}
+
+			$response = $this->process_payment($_POST['order_id']);
+
+			wp_send_json( $response );
+		}
+
+		/**
+		 * Render additional order page fields
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function render_additional_order_page_fields( $order = null ) {
+			if ( ! isset( $order ) || empty( $order ) ) {
+				$order = wc_get_order( absint( get_query_var( 'order-pay' ) ) );
+			}
+
+			if ( isset( $order ) ) {
+				echo '<input type="hidden" name="order_id" value="' . esc_attr( $order->get_id() ) . '" />';
 			}
 		}
 	}

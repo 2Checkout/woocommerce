@@ -1,11 +1,22 @@
 function inlinePay() {
     jQuery('#tco_inline_error').html('');
     jQuery('#place_order').attr('disabled', true);
-
+    var tco_ajax_url;
+    var tco_data;
+    if (jQuery('.checkout.woocommerce-checkout').length) {
+        tco_ajax_url = wc_checkout_params.checkout_url;
+        tco_data = jQuery('.checkout.woocommerce-checkout').serialize();
+    } else if (jQuery('form#order_review').length) {
+        tco_ajax_url = wc_checkout_params.wc_ajax_url
+            .toString()
+            .replace( 'wc-ajax', 'wc-api' )
+            .replace( '%%endpoint%%', 'twocheckout_inline_handle_payment_request' );
+        tco_data = jQuery('form#order_review').serialize();
+    }
     jQuery.ajax({
         type: 'POST',
-        data: jQuery('.checkout.woocommerce-checkout').serialize(),
-        url: wc_checkout_params.checkout_url,
+        data: tco_data,
+        url: tco_ajax_url,
         success: function (response) {
             if (response.result === "success") {
                 if (typeof response.payload !== "undefined") {
@@ -77,6 +88,21 @@ jQuery(document).on("change", "form[name='checkout'] input[name='payment_method'
                 e.preventDefault();
                 e.stopPropagation();
                 inlinePay();
+                return false;
+            });
+    }
+});
+
+jQuery(document).on("change", "form[id='order_review'] input[name='payment_method']", function () {
+
+    if (jQuery(this).attr('id') == 'payment_method_twocheckout_inline') {
+        jQuery("form#order_review").unbind('submit');
+        jQuery("form#order_review")
+            .on('submit', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                inlinePay();
+                return false;
             });
     }
 });
@@ -84,12 +110,24 @@ jQuery(document).on("change", "form[name='checkout'] input[name='payment_method'
 
 jQuery(window).on('load', function () {
     if (jQuery("#payment_method_twocheckout_inline").is(':checked')) {
-        jQuery("form.woocommerce-checkout").unbind('submit');
-        jQuery("form.woocommerce-checkout")
-            .on('submit', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                inlinePay();
+        if (jQuery('form.woocommerce-checkout').length) {
+            jQuery("form.woocommerce-checkout").unbind('submit');
+            jQuery("form.woocommerce-checkout")
+                .on('submit', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    inlinePay();
+                    return false;
+                });
+        } else if (jQuery('form#order_review').length) {
+            jQuery("form#order_review").unbind('submit');
+            jQuery("form#order_review")
+                .on('submit', function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    inlinePay();
+                    return false;
             });
+        }
     }
 });

@@ -14,12 +14,12 @@ if ($this->description) {
         <input type="hidden" id="ess_token" name="ess_token" value="">
         <input type="hidden" id="is_guest" name="guest" value="">
         <div id="tco_error"></div>
-        <form id="tco-payment-form" action="#" method="post" data-json="<?php echo str_replace("\"", "'", $this->custom_style); ?>">
+        <div id="tco-payment-form" data-json="<?php echo str_replace("\"", "'", $this->custom_style); ?>">
             <div id="card-element">
                 <div id="load">Loading, please wait...</div>
                 <!-- A TCO IFRAME will be inserted here. -->
             </div>
-        </form>
+        </div>
     </div>
 
     <script type="text/javascript">
@@ -27,4 +27,3 @@ if ($this->description) {
         let defaultStyle = "<?php echo $this->default_style;?>";
     </script>
 </fieldset>
-

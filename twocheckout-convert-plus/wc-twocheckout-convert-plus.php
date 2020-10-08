@@ -67,7 +67,6 @@ function woocommerce_twocheckout_convert_plus() {
 
 			//set the variable for the example endpoint. you can use a option plugin to store it and change it later in the admin page
 			$this->css_filepath = 'assets/css/twocheckout.css';
-			$this->js_filepath  = 'assets/js/twocheckout_convert_plus.js';
 
 			$this->id         = 'twocheckout_convert_plus';
 			$this->icon       = apply_filters( 'woocommerce_twocheckout_icon',
@@ -130,8 +129,7 @@ function woocommerce_twocheckout_convert_plus() {
 
 		//enqueue a script
 		function enqueue_script() {
-			wp_enqueue_script( 'twocheckout_convert_plus_script',
-				'/wp-content/plugins/twocheckout-convert-plus/assets/js/twocheckout_convert_plus.js' );
+
 		}
 
 
@@ -320,12 +318,11 @@ function woocommerce_twocheckout_convert_plus() {
 					$this->secret_word,
 					$buy_link_params );
 
-				$woocommerce->cart->empty_cart();
+        $pay_url = 'https://secure.2checkout.com/checkout/buy?' . http_build_query($buy_link_params);
 
 				return [
 					'result'  => 'success',
-					'payload' => wp_json_encode( $buy_link_params ),
-					'url'     => self::CP_base_url
+					'redirect' => $pay_url 
 				];
 
 
