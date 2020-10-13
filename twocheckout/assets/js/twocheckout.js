@@ -47,7 +47,7 @@ function twoPayJsCall(){
                     jQuery('#place_order').attr('disabled', false)
                 });
             } else {
-                jQuery('form#order_review').unbind('submit').submit()
+                jQuery('form#order_review').unbind('submit').submit();
             }
         }
     }
