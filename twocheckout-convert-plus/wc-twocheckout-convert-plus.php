@@ -346,7 +346,7 @@ function woocommerce_twocheckout_convert_plus() {
 			//2. Set the BASE needed fields.
 			$cart_data               = [];
 			$cart_data['src']        = self::SRC;
-			$cart_data['return-url'] = add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) );
+			$cart_data['return-url'] = add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}";
 			$cart_data['return-type']      = 'redirect';
 			$cart_data['expiration']       = time() + ( 3600 * 5 );
 			$cart_data['order-ext-ref']    = $order->get_id();
@@ -478,23 +478,58 @@ function woocommerce_twocheckout_convert_plus() {
 			}
 		}
 
+		/**
+		 * @return void
+		 */
 		public function check_payment_response() {
+			global $woocommerce;
 			$params = $_GET;
-			if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) ) {
-				$order = wc_get_order( (int) $params['order-ext-ref'] );
-				if ( ! $order instanceof WC_Order ) {
-					$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
-				} else {
-					$redirect_url = $order->get_checkout_order_received_url();
-					if ( wp_redirect( $redirect_url ) ) {
-						exit;
+			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
+			{
+				if ( $params['pm'] == 'twocheckout_convert_plus' )
+				{
+					if ( isset($params['order-ext-ref']) && ! empty( $params['order-ext-ref'] ) )
+					{
+						$order = wc_get_order( (int) $params['order-ext-ref'] );
+						if ( ! $order instanceof WC_Order )
+						{
+							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
+						}
+						else
+						{
+							if ( isset( $params['refno'] ) && ! empty( $params['refno'] ) )
+							{
+								$refNo = $params['refno'];
+								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+								$api = new Two_Checkout_Api();
+								$api->set_seller_id( $this->seller_id );
+								$api->set_secret_key( $this->secret_key );
+								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
+
+								if(!empty($api_response['Status']) && isset($api_response['Status'])){
+									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
+									{
+										$redirect_url = $order->get_checkout_order_received_url();
+										if ( wp_redirect( $redirect_url ) )
+										{
+											if ( $order->has_status( 'pending' ) )
+											{
+												$order->update_status( 'processing' );
+											}
+											$woocommerce->cart->empty_cart();
+											exit;
+										}
+									}
+								}
+							}
+						}
 					}
+					status_header( 404 );
+					nocache_headers();
+					include( get_query_template( '404' ) );
+					die();
 				}
 			}
-			status_header( 404 );
-			nocache_headers();
-			include( get_query_template( '404' ) );
-			die();
 		}
 	}
 

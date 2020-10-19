@@ -96,6 +96,7 @@ function woocommerce_twocheckout_inline() {
 			}, 10, 1 );
 
 			// Payment listener/API hook
+			add_action( 'woocommerce_api_payment_response', [ $this, 'check_inline_payment_response' ] );
 			add_action( 'woocommerce_api_2checkout_ipn',
 				[ $this, 'check_ipn_response' ] );
 
@@ -299,7 +300,7 @@ function woocommerce_twocheckout_inline() {
 					'products'         => $this->get_item( $order ),
 					'return-method'    => [
 						'type' => 'redirect',
-						'url'  => $this->get_return_url( $order )
+						'url'  => add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}",
 					],
 					'test'             => strtolower( $this->test_order ) === 'yes' ? '1' : '0',
 					'order-ext-ref'    => $order->get_id(),
@@ -396,6 +397,61 @@ function woocommerce_twocheckout_inline() {
 		}
 
 		/**
+		 * @return void
+		 */
+		public function check_inline_payment_response() {
+			global $woocommerce;
+			$params = $_GET;
+			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
+			{
+				if ( $params['pm'] == 'twocheckout_inline' )
+				{
+					if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) )
+					{
+						$order = wc_get_order( (int) $params['order-ext-ref'] );
+						if ( ! $order instanceof WC_Order )
+						{
+							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
+						}
+						else
+						{
+							if ( isset( $params['refno'] ) && ! empty( $params['refno'] ) )
+							{
+								$refNo = $params['refno'];
+								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+								$api = new Two_Checkout_Api();
+								$api->set_seller_id( $this->seller_id );
+								$api->set_secret_key( $this->secret_key );
+								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
+
+								if(!empty($api_response['Status']) && isset($api_response['Status']))
+								{
+									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
+									{
+										$redirect_url = $order->get_checkout_order_received_url();
+										if ( wp_redirect( $redirect_url ) )
+										{
+											if ( $order->has_status( 'pending' ) )
+											{
+												$order->update_status( 'processing' );
+											}
+											$woocommerce->cart->empty_cart();
+											exit;
+										}
+									}
+								}
+							}
+						}
+					}
+					status_header( 404 );
+					nocache_headers();
+					include( get_query_template( '404' ) );
+					die();
+				}
+			}
+		}
+
+		/**
 		 * Validate & process 2Checkout request
 		 *
 		 * @access public
@@ -443,7 +499,7 @@ function woocommerce_twocheckout_inline() {
 			$nonce_value = $_POST['woocommerce-pay-nonce'];
 
 			if ( ! wp_verify_nonce( $nonce_value, 'woocommerce-pay' ) ) {
-			    return;
+				return;
 			}
 
 			$response = $this->process_payment($_POST['order_id']);
