@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 0.0.3
+  Version: 1.1.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
