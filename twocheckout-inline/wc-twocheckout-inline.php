@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Inline Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 0.0.3
+  Version: 1.1.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -96,11 +96,17 @@ function woocommerce_twocheckout_inline() {
 			}, 10, 1 );
 
 			// Payment listener/API hook
+			add_action( 'woocommerce_api_payment_response', [ $this, 'check_inline_payment_response' ] );
 			add_action( 'woocommerce_api_2checkout_ipn',
 				[ $this, 'check_ipn_response' ] );
 
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_style' ] );
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_script' ] );
+
+			add_action( 'woocommerce_api_twocheckout_inline_handle_payment_request', [ $this, 'handle_payment_request' ] );
+
+			// Order Page filter
+			add_action( 'woocommerce_pay_order_after_submit', array( $this, 'render_additional_order_page_fields' ) );
 
 		}
 
@@ -294,7 +300,7 @@ function woocommerce_twocheckout_inline() {
 					'products'         => $this->get_item( $order ),
 					'return-method'    => [
 						'type' => 'redirect',
-						'url'  => $this->get_return_url( $order )
+						'url'  => add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}",
 					],
 					'test'             => strtolower( $this->test_order ) === 'yes' ? '1' : '0',
 					'order-ext-ref'    => $order->get_id(),
@@ -391,6 +397,61 @@ function woocommerce_twocheckout_inline() {
 		}
 
 		/**
+		 * @return void
+		 */
+		public function check_inline_payment_response() {
+			global $woocommerce;
+			$params = $_GET;
+			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
+			{
+				if ( $params['pm'] == 'twocheckout_inline' )
+				{
+					if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) )
+					{
+						$order = wc_get_order( (int) $params['order-ext-ref'] );
+						if ( ! $order instanceof WC_Order )
+						{
+							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
+						}
+						else
+						{
+							if ( isset( $params['refno'] ) && ! empty( $params['refno'] ) )
+							{
+								$refNo = $params['refno'];
+								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+								$api = new Two_Checkout_Api();
+								$api->set_seller_id( $this->seller_id );
+								$api->set_secret_key( $this->secret_key );
+								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
+
+								if(!empty($api_response['Status']) && isset($api_response['Status']))
+								{
+									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
+									{
+										$redirect_url = $order->get_checkout_order_received_url();
+										if ( wp_redirect( $redirect_url ) )
+										{
+											if ( $order->has_status( 'pending' ) )
+											{
+												$order->update_status( 'processing' );
+											}
+											$woocommerce->cart->empty_cart();
+											exit;
+										}
+									}
+								}
+							}
+						}
+					}
+					status_header( 404 );
+					nocache_headers();
+					include( get_query_template( '404' ) );
+					die();
+				}
+			}
+		}
+
+		/**
 		 * Validate & process 2Checkout request
 		 *
 		 * @access public
@@ -420,6 +481,45 @@ function woocommerce_twocheckout_inline() {
 					}
 					$ipn_helper->process_ipn();
 				}
+			}
+		}
+
+		/**
+		 * ajax callable wrapper for process_payment
+		 *
+		 * @access public
+		 * @return array
+		 */
+		public function handle_payment_request() {
+			ob_start();
+			if ( $_SERVER['REQUEST_METHOD'] !== 'POST' || ! isset( $_POST['woocommerce-pay-nonce'] ) || ! isset( $_POST['order_id'] ) ) {
+				return;
+			}
+
+			$nonce_value = $_POST['woocommerce-pay-nonce'];
+
+			if ( ! wp_verify_nonce( $nonce_value, 'woocommerce-pay' ) ) {
+				return;
+			}
+
+			$response = $this->process_payment($_POST['order_id']);
+
+			wp_send_json( $response );
+		}
+
+		/**
+		 * Render additional order page fields
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function render_additional_order_page_fields( $order = null ) {
+			if ( ! isset( $order ) || empty( $order ) ) {
+				$order = wc_get_order( absint( get_query_var( 'order-pay' ) ) );
+			}
+
+			if ( isset( $order ) ) {
+				echo '<input type="hidden" name="order_id" value="' . esc_attr( $order->get_id() ) . '" />';
 			}
 		}
 	}

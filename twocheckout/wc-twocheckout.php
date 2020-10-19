@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 0.0.3
+  Version: 1.1.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -79,8 +79,14 @@ function woocommerce_twocheckout() {
 			add_action( 'woocommerce_update_options_payment_gateways_' . $this->id,
 				[ $this, 'process_admin_options' ] );
 
+
 			// Payment listener/API hook
+			add_action( 'woocommerce_api_payment_response', [ $this, 'check_api_payment_response' ] );
 			add_action( 'woocommerce_api_2checkout_ipn', [ $this, 'check_ipn_response' ] );
+
+			// Order Page filter
+			// add_filter( 'woocommerce_available_payment_gateways', array( $this, 'prepare_order_pay_page' ) );
+			add_action( 'woocommerce_pay_order_after_submit', array( $this, 'render_additional_order_page_fields' ) );
 
 			if ( ! $this->is_valid_for_use() ) {
 				$this->enabled = false;
@@ -276,8 +282,8 @@ function woocommerce_twocheckout() {
 					'PaymentDetails'    => $this->get_payment_details(
 						$post_data['ess_token'],
 						$customer_ip,
-						$this->get_return_url( $order ),
-						$woocommerce->cart->get_cart_url()
+						add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}",
+						wc_get_cart_url()
 					)
 				];
 
@@ -328,9 +334,10 @@ function woocommerce_twocheckout() {
 								'type'     => '3ds_redirect',
 								'refresh'  => true,
 								'reload'   => false,
-								'redirect' => $redirect_url
+								'redirect' => $redirect_url,
 							];
 						} else {
+							$order->update_status( 'processing' );
 							$json_response = [
 								'result'   => 'success',
 								'messages' => 'Order payment success',
@@ -446,6 +453,61 @@ function woocommerce_twocheckout() {
 			return null;
 		}
 
+		/**
+		 * @return void
+		 */
+		public function check_api_payment_response() {
+			global $woocommerce;
+			$params = $_GET;
+			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
+			{
+				if ( $params['pm'] == 'twocheckout' )
+				{
+					if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) )
+					{
+						$order = wc_get_order( (int) $params['order-ext-ref'] );
+						if ( ! $order instanceof WC_Order )
+						{
+							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
+						}
+						else
+						{
+							if ( isset( $params['REFNO'] ) && ! empty( $params['REFNO'] ) )
+							{
+								$refNo = $params['REFNO'];
+								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+								$api = new Two_Checkout_Api();
+								$api->set_seller_id( $this->seller_id );
+								$api->set_secret_key( $this->secret_key );
+								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
+
+								if(!empty($api_response['Status']) && isset($api_response['Status']))
+								{
+									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
+									{
+										$redirect_url = $order->get_checkout_order_received_url();
+										if ( wp_redirect( $redirect_url ) )
+										{
+											if ( $order->has_status( 'pending' ) )
+											{
+												$order->update_status( 'processing' );
+											}
+											$woocommerce->cart->empty_cart();
+											exit;
+										}
+									}
+								}
+							}
+						}
+					}
+					status_header( 404 );
+					nocache_headers();
+					include( get_query_template( '404' ) );
+					die();
+				}
+			}
+		}
+
 
 		/**
 		 * Validate & process 2Checkout request
@@ -477,6 +539,31 @@ function woocommerce_twocheckout() {
 					}
 					$ipn_helper->process_ipn();
 				}
+			}
+		}
+
+		/**
+		 * Render additional order page fields
+		 *
+		 * @access public
+		 * @return void
+		 */
+		public function render_additional_order_page_fields( $order = null ) {
+			if ( ! isset( $order ) || empty( $order ) ) {
+				$order = wc_get_order( absint( get_query_var( 'order-pay' ) ) );
+			}
+
+			if ( isset( $order ) ) {
+				echo '<input type="hidden" name="billing_first_name" value="' . esc_attr( $order->get_billing_first_name() ) . '" />';
+				echo '<input type="hidden" name="billing_last_name" value="' . esc_attr( $order->get_billing_last_name() ) . '" />';
+				echo '<input type="hidden" name="billing_address_1" value="' . esc_attr( $order->get_billing_address_1() ) . '" />';
+				echo '<input type="hidden" name="billing_address_2" value="' . esc_attr( $order->get_billing_address_2() ) . '" />';
+				echo '<input type="hidden" name="billing_city" value="' . esc_attr( $order->get_billing_city() ) . '" />';
+				echo '<input type="hidden" name="billing_state" value="' . esc_attr( $order->get_billing_state() ) . '" />';
+				echo '<input type="hidden" name="billing_postcode" value="' . esc_attr( $order->get_billing_postcode() ) . '" />';
+				echo '<input type="hidden" name="billing_phone" value="' . esc_attr( $order->get_billing_phone() ) . '" />';
+				echo '<input type="hidden" name="billing_email" value="' . esc_attr( $order->get_billing_email() ) . '" />';
+				echo '<input type="hidden" name="billing_company" value="' . esc_attr( $order->get_billing_company() ) . '" />';
 			}
 		}
 	}
