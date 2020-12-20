@@ -61,7 +61,7 @@ function isDomReadyFor2PayJs() {
         }
         setTimeout(function () {
             isDomReadyFor2PayJs();
-        }, 333);
+        }, 1900);
     } else {
         prepareTwoPayJs();
     }
