@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 1.1.0
+  Version: 1.2.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -14,7 +14,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 /* Add a custom payment class to WC
   ------------------------------------------------------------ */
-add_action( 'plugins_loaded', 'woocommerce_twocheckout');
+add_action( 'plugins_loaded', 'woocommerce_twocheckout' );
 
 // Autoload whatever classes we need
 // They're required ONLY when "new" is called
@@ -49,12 +49,13 @@ function woocommerce_twocheckout() {
 		 * WC_Gateway_Twocheckout constructor.
 		 */
 		public function __construct() {
-			$this->id         = 'twocheckout';
-			$this->icon       = apply_filters( 'woocommerce_twocheckout_icon',
+			$this->id                 = 'twocheckout';
+			$this->icon               = apply_filters( 'woocommerce_twocheckout_icon',
 				plugin_dir_url( __FILE__ ) . 'twocheckout.png' );
-			$this->plugin_name = '2Checkout 2PayJs over API';
+			$this->plugin_name        = '2Checkout 2PayJs over API';
 			$this->method_description = __( 'Secured 2Checkout card payments over API.', 'woocommerce' );
-			$this->has_fields = true;
+			$this->supports[]         = 'refunds';
+			$this->has_fields         = true;
 
 			// Load the settings
 			$this->init_form_fields();
@@ -139,6 +140,7 @@ function woocommerce_twocheckout() {
 			wp_enqueue_script( '2payjs', 'https://2pay-js.2checkout.com/v1/2pay.js' );
 			wp_enqueue_script( 'twocheckout_script', '/wp-content/plugins/twocheckout/assets/js/twocheckout.js' );
 			wp_enqueue_style( 'twocheckout_style', '/wp-content/plugins/twocheckout/assets/css/twocheckout.css' );
+			$twocheckout_is_checkout = ( is_checkout() && empty( $_GET['pay_for_order'] ) ) ? 'yes' : 'no';
 			require_once plugin_dir_path( __FILE__ ) . 'templates/payment-fields.php';
 		}
 
@@ -248,6 +250,65 @@ function woocommerce_twocheckout() {
 			return true;
 		}
 
+		/**
+		 * @param int    $order_id
+		 * @param null   $amount
+		 * @param string $reason
+		 *
+		 * @return bool|\WP_Error
+		 * @throws \Exception
+		 */
+		public function process_refund( $order_id, $amount = null, $reason = '' ) {
+			$order = wc_get_order( $order_id );
+			if ( $order->get_payment_method() == 'twocheckout' ) {
+				$transaction_id = $order->get_meta( '__2co_order_number' );
+
+				require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+				$api = new Two_Checkout_Api();
+				$api->set_seller_id( $this->seller_id );
+				$api->set_secret_key( $this->secret_key );
+				$tco_order = $api->call( 'orders/' . $transaction_id . '/', [], 'GET' );
+				if ( ! $order || ! $tco_order || ! $transaction_id ) {
+					$this->log( sprintf( 'Tried to refund order with order ID %s but it has no registered transaction ID, aborting.', $order_id ) );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Unable to refund transaction' );
+				}
+
+				if ( $amount != $tco_order['GrossPrice'] ) {
+					$this->log( 'Only full refund is supported!' );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Only full refund is supported.' );
+				}
+
+				if ( strtolower( get_woocommerce_currency() ) != strtolower( $tco_order['Currency'] ) ) {
+					$this->log( 'Order currency not matching the 2checkout response!' );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Order currency not matching the 2checkout response.' );
+				}
+
+
+				$params = [
+					"amount"  => $amount,
+					"comment" => $reason,
+					"reason"  => 'Other'
+				];
+
+				$response = $api->call( '/orders/' . $transaction_id . '/refund/', $params, 'POST' );
+
+				if ( isset( $response['error_code'] ) && ! empty( $response['error_code'] ) ) {
+					$this->log( 'Refund failed. Please login to your 2Checkout admin to issue the partial refund manually.' );
+
+					return new WP_Error( '2co_refund_error', 'Refund failed. Please login to your 2Checkout admin to issue the partial refund manually.' );
+				}
+
+				$order->update_meta_data( '__2co_order_number', $response['id'] );
+				$order->add_order_note( __( sprintf( 'Refunded %s out of a total of %s from order', $amount, $order->get_total() ) ) );
+				$order->save_meta_data();
+				$order->save();
+
+				return true;
+			}
+		}
 
 		/**
 		 * Process the payment and return the result
@@ -282,7 +343,7 @@ function woocommerce_twocheckout() {
 					'PaymentDetails'    => $this->get_payment_details(
 						$post_data['ess_token'],
 						$customer_ip,
-						add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}",
+						add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ) . "&pm={$order->get_payment_method()}" . "&order-ext-ref={$order->get_id()}",
 						wc_get_cart_url()
 					)
 				];
@@ -291,8 +352,8 @@ function woocommerce_twocheckout() {
 				$api->set_seller_id( $this->seller_id );
 				$api->set_secret_key( $this->secret_key );
 				$api_response = $api->call( 'orders', $order_params );
-				if ( !$api_response || isset($api_response['error_code']) && !empty($api_response['error_code']) ) { // we dont get any response from 2co or internal account related error
-					if ( $api_response && isset($api_response['message']) && !empty($api_response['message']) ) {
+				if ( ! $api_response || isset( $api_response['error_code'] ) && ! empty( $api_response['error_code'] ) ) { // we dont get any response from 2co or internal account related error
+					if ( $api_response && isset( $api_response['message'] ) && ! empty( $api_response['message'] ) ) {
 						$error_message = $api_response['message'];
 					} else {
 						$error_message = __( 'The payment could not be processed for order ' . $order_id . '! Please try again or contact us.' );
@@ -322,8 +383,9 @@ function woocommerce_twocheckout() {
 					} else {
 						$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
 
+						$order->update_meta_data( '__2co_order_number', $api_response['RefNo'] );
 						$has3ds = false;
-						if( isset($api_response['PaymentDetails']['PaymentMethod']['Authorize3DS']) ) {
+						if ( isset( $api_response['PaymentDetails']['PaymentMethod']['Authorize3DS'] ) ) {
 							$has3ds = $this->has_authorize_3DS( $api_response['PaymentDetails']['PaymentMethod']['Authorize3DS'] );
 						}
 						if ( $has3ds ) {
@@ -350,7 +412,8 @@ function woocommerce_twocheckout() {
 				}
 
 				return $json_response;
-			} catch ( Exception $e ) {
+			}
+			catch ( Exception $e ) {
 				wc_add_notice( $e->getMessage(), $notice_type = 'error' );
 
 				return false;
@@ -359,7 +422,7 @@ function woocommerce_twocheckout() {
 
 
 		/**
-		 * @param array $post_data
+		 * @param array  $post_data
 		 * @param string $country_code
 		 *
 		 * @return array
@@ -459,21 +522,14 @@ function woocommerce_twocheckout() {
 		public function check_api_payment_response() {
 			global $woocommerce;
 			$params = $_GET;
-			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
-			{
-				if ( $params['pm'] == 'twocheckout' )
-				{
-					if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) )
-					{
+			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) ) {
+				if ( $params['pm'] == 'twocheckout' ) {
+					if ( isset( $params['order-ext-ref'] ) && ! empty( $params['order-ext-ref'] ) ) {
 						$order = wc_get_order( (int) $params['order-ext-ref'] );
-						if ( ! $order instanceof WC_Order )
-						{
+						if ( ! $order instanceof WC_Order ) {
 							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
-						}
-						else
-						{
-							if ( isset( $params['REFNO'] ) && ! empty( $params['REFNO'] ) )
-							{
+						} else {
+							if ( isset( $params['REFNO'] ) && ! empty( $params['REFNO'] ) ) {
 								$refNo = $params['REFNO'];
 								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 								$api = new Two_Checkout_Api();
@@ -481,16 +537,15 @@ function woocommerce_twocheckout() {
 								$api->set_secret_key( $this->secret_key );
 								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
 
-								if(!empty($api_response['Status']) && isset($api_response['Status']))
-								{
-									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
-									{
+								if ( ! empty( $api_response['Status'] ) && isset( $api_response['Status'] ) ) {
+									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) ) {
 										$redirect_url = $order->get_checkout_order_received_url();
-										if ( wp_redirect( $redirect_url ) )
-										{
-											if ( $order->has_status( 'pending' ) )
-											{
+										if ( wp_redirect( $redirect_url ) ) {
+											if ( $order->has_status( 'pending' ) ) {
 												$order->update_status( 'processing' );
+												$order->update_meta_data( '__2co_order_number', $refNo );
+												$order->save_meta_data();
+												$order->save();
 											}
 											$woocommerce->cart->empty_cart();
 											exit;
@@ -527,7 +582,8 @@ function woocommerce_twocheckout() {
 					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelper.php';
 					try {
 						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->debug, $order );
-					} catch ( Exception $ex ) {
+					}
+					catch ( Exception $ex ) {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}

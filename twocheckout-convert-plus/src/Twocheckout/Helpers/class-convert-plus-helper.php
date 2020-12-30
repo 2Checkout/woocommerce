@@ -34,6 +34,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	const ORDER_STATUS_PURCHASE_PENDING = 'PURCHASE_PENDING';
 
 	const CURLOPT_URL = "https://secure.2checkout.com/checkout/api/encrypt/generate/signature";
+	const TCO_ORDER_REFERENCE = '__2co_order_number';
 
 	protected $wc_order;
 	protected $request_params;
@@ -270,7 +271,14 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	 * @return bool
 	 */
 	protected function _is_order_completed() {
-		return $this->wc_order->get_status() == self::ORDER_STATUS_COMPLETE;
+		return strtoupper($this->wc_order->get_status()) == self::ORDER_STATUS_COMPLETE;
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function _is_order_refunded() {
+		return strtoupper($this->wc_order->get_status()) == self::ORDER_STATUS_REFUND;
 	}
 
 	/**
@@ -321,12 +329,14 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 					break;
 
 				case self::ORDER_STATUS_COMPLETE:
-					//woocommerce style :)
-					if ( ! $this->_is_order_completed() ) {
+					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded()) {
+						$this->wc_order->update_status( 'completed' );
 						$this->wc_order->payment_complete();
-						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ),
-							false, false );
+						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ),false, false );
+						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $this->request_params['REFNO'] );
+						$this->wc_order->save_meta_data();
 						$this->wc_order->add_order_note( __( "Order payment is completed." ), false, false );
+						$this->wc_order->save();
 					}
 					break;
 

@@ -23,7 +23,8 @@ if ($this->description) {
     </div>
 
     <script type="text/javascript">
-        let seller_id = "<?php echo $this->seller_id ?>";
-        let defaultStyle = "<?php echo $this->default_style;?>";
+        var twocheckoutSellerId = "<?php echo $this->seller_id ?>";
+        var twocheckoutDefaultStyle = "<?php echo $this->default_style;?>";
+        var twocheckoutIsCheckout = "<?php echo $twocheckout_is_checkout;?>";
     </script>
 </fieldset>
