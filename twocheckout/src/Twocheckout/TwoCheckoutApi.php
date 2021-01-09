@@ -84,7 +84,7 @@ class Two_Checkout_Api {
 	 * @return array
 	 * @throws Exception
 	 */
-	private function get_headers() {
+	public function get_headers() {
 		if ( ! $this->seller_id || ! $this->secret_key ) {
 			throw new Exception( 'Merchandiser needs a valid 2Checkout SellerId and SecretKey to authenticate!' );
 		}

@@ -47,15 +47,6 @@ function getTwoCheckoutConvertPlusFormFields() {
 			'desc_tip'    => true,
 			'placeholder' => ''
 		],
-		'ipn_webhook' => [
-			'title'             => __( 'IPN Callback Url', 'woocommerce' ),
-			'type'              => 'text',
-			'default'           => str_replace( 'https:', 'http:', add_query_arg( 'wc-api', '2checkout_ipn', home_url( '/' ) ) ),
-			'label'             => __( 'IPN Callback Url', 'woocommerce' ),
-			'desc_tip'          => true,
-			'custom_attributes' => [ 'readonly' => "readonly" ],
-			'description'       => sprintf( __( 'The callback endpoint for IPN requests from 2Checkout', 'woocommerce' ), wc_get_log_file_path( 'twocheckout' ) )
-		],
 		'debug'       => [
 			'title'       => __( 'Debug Log', 'woocommerce' ),
 			'type'        => 'checkbox',

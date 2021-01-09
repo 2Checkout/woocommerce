@@ -1,5 +1,5 @@
-let cardElementLoaded = false;
-let jsPaymentClient, component;
+let twoPayJsCardElementLoaded = false;
+let twoPayJsPaymentClient, twoPayJsComponent;
 
 function twoPayJsCall(){
     if (jQuery('form.woocommerce-checkout').length || jQuery('form#order_review').length) {
@@ -9,11 +9,11 @@ function twoPayJsCall(){
         let customer = jQuery('input[name="billing_first_name"]').val() + ' ' + jQuery('input[name="billing_last_name"]').val();
         if (jQuery('form.woocommerce-checkout').length) {
             if(jQuery("#payment_method_twocheckout").is(':checked')) {
-                jsPaymentClient.tokens.generate(component, {name: customer}).then(function (response) {
+                twoPayJsPaymentClient.tokens.generate(twoPayJsComponent, {name: customer}).then(function (response) {
                     if (response.token) {
                         jQuery('#ess_token').val(response.token);
                         jQuery('#is_guest').val(wc_checkout_params.option_guest_checkout);
-                        ajaxJsSubmit();
+                        ajaxTwoPayJsSubmit();
                     } else {
                         console.log('Error generating token!');
                         jQuery('#tcoWait').hide()
@@ -26,11 +26,11 @@ function twoPayJsCall(){
                     jQuery('#place_order').attr('disabled', false)
                 });
             } else {
-                ajaxJsSubmit();
+                ajaxTwoPayJsSubmit();
             }
         } else if (jQuery('form#order_review').length) {
             if(jQuery("#payment_method_twocheckout").is(':checked')) {
-                jsPaymentClient.tokens.generate(component, {name: customer}).then(function (response) {
+                twoPayJsPaymentClient.tokens.generate(twoPayJsComponent, {name: customer}).then(function (response) {
                     if (response.token) {
                         jQuery('#ess_token').val(response.token);
                         jQuery('#is_guest').val(wc_checkout_params.option_guest_checkout);
@@ -55,87 +55,87 @@ function twoPayJsCall(){
 
 
 function isDomReadyFor2PayJs() {
-    if (!cardElementLoaded) {
-        if (jQuery('#tco-payment-form').length) {
-            cardElementLoaded = true;
+    if(jQuery("#payment_method_twocheckout").is(':checked')) {
+        if (jQuery('form.woocommerce-checkout').length) {
+            jQuery("form.woocommerce-checkout").unbind('submit');
+            jQuery("form.woocommerce-checkout").on('submit', bindTwoPayJs);
+        } else if (jQuery('form#order_review').length) {
+            jQuery("form#order_review").unbind('submit');
+            jQuery("form#order_review").on('submit', bindTwoPayJs);
         }
-        setTimeout(function () {
-            isDomReadyFor2PayJs();
-        }, 333);
+        if (!twoPayJsCardElementLoaded) {
+            if (jQuery('#tco-payment-form').length && jQuery('#tco-payment-form').data('json').length) {
+                twoPayJsCardElementLoaded = true;
+            }
+            setTimeout(function () {
+                isDomReadyFor2PayJs();
+            }, 100);
+        } else {
+            prepareTwoPayJs();
+        }
     } else {
-        prepareTwoPayJs();
+        jQuery("form.woocommerce-checkout").off('submit', bindTwoPayJs);
+        jQuery("form#order_review").off('submit', bindTwoPayJs);
     }
 }
 
 jQuery(window).on('load', function() {
-    if(jQuery("#payment_method_twocheckout").is(':checked')) {
-        if (jQuery('form.woocommerce-checkout').length) {
-            jQuery("form.woocommerce-checkout").unbind('submit');
-            jQuery("form.woocommerce-checkout")
-                .on('submit', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    twoPayJsCall();
-                    return false;
-                });
-        } else if (jQuery('form#order_review').length) {
-            jQuery("form#order_review").unbind('submit');
-            jQuery("form#order_review")
-                .on('submit', function (e) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    twoPayJsCall();
-                    return false;
-                });
-        }
+    if (twocheckoutIsCheckout === 'yes') {
+        jQuery( document.body ).on( 'updated_checkout', function() {
+            isDomReadyFor2PayJs();
+        });
+    } else if (jQuery( 'form#add_payment_method' ).length || jQuery( 'form#order_review' ).length ) {
+        isDomReadyFor2PayJs();
     }
-    isDomReadyFor2PayJs();
-
 });
 
 jQuery(document).on("change", "form[name='checkout'] input[name='payment_method']", function () {
-    if(jQuery(this).attr('id')== 'payment_method_twocheckout'){
-        jQuery("form.woocommerce-checkout").unbind('submit');
-        jQuery("form.woocommerce-checkout")
-            .on('submit', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                twoPayJsCall();
-                return false;
-            });
+    if (jQuery(this).attr('id')== 'payment_method_twocheckout') {
+        if (jQuery('#card-element iframe').length) {
+            jQuery('#card-element iframe').remove();
+        }
     }
+    isDomReadyFor2PayJs();
 });
 
 jQuery(document).on("change", "form[id='order_review'] input[name='payment_method']", function () {
-    if(jQuery(this).attr('id')== 'payment_method_twocheckout'){
-        jQuery("form#order_review").unbind('submit');
-        jQuery("form#order_review")
-            .on('submit', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                twoPayJsCall();
-                return false;
-            });
+    if (jQuery(this).attr('id')== 'payment_method_twocheckout') {
+        if (jQuery('#card-element iframe').length) {
+            jQuery('#card-element iframe').remove();
+        }
     }
+    isDomReadyFor2PayJs();
 });
 
-function prepareTwoPayJs() {
-    jsPaymentClient = new TwoPayClient(seller_id);
-
-    if (defaultStyle === 'yes') {
-        component = jsPaymentClient.components.create('card');
-    } else {
-        let style = jQuery('#tco-payment-form').data('json');
-        style = style.replace(/'/g, '"');
-        component = jsPaymentClient.components.create('card', JSON.parse(style));
-    }
-    jQuery('#load').fadeOut(150, function () {
-        jQuery('#load').remove();
-    });
-    component.mount('#card-element');
+function bindTwoPayJs(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    twoPayJsCall();
+    return false;
 }
 
-function ajaxJsSubmit(){
+function prepareTwoPayJs() {
+    if (!jQuery('#card-element iframe:visible').length) {
+        jQuery('#card-element iframe').remove();
+        jQuery('#load').show();
+
+        twoPayJsPaymentClient = new TwoPayClient(twocheckoutSellerId);
+
+        if (twocheckoutDefaultStyle === 'yes') {
+            twoPayJsComponent = twoPayJsPaymentClient.components.create('card');
+        } else {
+            let style = jQuery('#tco-payment-form').data('json');
+            style = style.replace(/'/g, '"');
+            twoPayJsComponent = twoPayJsPaymentClient.components.create('card', JSON.parse(style));
+        }
+        jQuery('#load').fadeOut(150, function () {
+            jQuery('#load').hide();
+        });
+        twoPayJsComponent.mount('#card-element');
+    }
+}
+
+function ajaxTwoPayJsSubmit(){
     jQuery.ajax({
         type: 'POST',
         data: jQuery('.checkout.woocommerce-checkout').serialize(),
@@ -144,6 +144,7 @@ function ajaxJsSubmit(){
             jQuery('#tcoWait').hide();
             if (response.result === "failure") {
                 jQuery('#tco_error').html(response.messages);
+                jQuery('#tcoWait').hide();
             } else {
                 window.location.replace(response.redirect);
             }

@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Convert Plus Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 1.1.0
+  Version: 1.2.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -19,7 +19,6 @@ add_action( 'plugins_loaded', 'woocommerce_twocheckout_convert_plus' );
 /**
  * Check if WooCommerce is active
  **/
-
 function woocommerce_twocheckout_convert_plus() {
 	if ( ! class_exists( 'WC_Payment_Gateway' ) ) {
 		return;
@@ -29,17 +28,12 @@ function woocommerce_twocheckout_convert_plus() {
 	}
 
 	class WC_Twocheckout_Convert_Plus_Getaway extends \WC_Payment_Gateway {
-		/**** Plugin properties ****/
 
+		/**** Plugin properties ****/
 		protected $plugin_name;
 		protected $version;
-
-
 		/**** Custom Plugin Properties ****/
-
 		protected $css_filepath;
-		protected $js_filepath;
-
 
 		// Logging
 		public static $log_enabled = false;
@@ -51,9 +45,7 @@ function woocommerce_twocheckout_convert_plus() {
 		private $custom_style;
 		private $debug;
 
-		const SRC = 'WOOCOMMERCE_3_8';
-		const CP_base_url = 'https://secure.2checkout.com/checkout/buy/?';
-
+		const PAYMENT_METHOD_ID = 'twocheckout_convert_plus';
 
 		/**** Plugin Constructor and Initializer(Run) ****/
 		/**
@@ -63,12 +55,13 @@ function woocommerce_twocheckout_convert_plus() {
 			//Initialize all the basics components of the plugin
 			$this->plugin_name        = '2Checkout Convert Plus Payment Method Plugin';
 			$this->method_description = __( '2Checkout secured card payments with Buy Links.', 'woocommerce' );
+			$this->supports[]         = 'refunds';
 			$this->version            = '1.0.0';
 
 			//set the variable for the example endpoint. you can use a option plugin to store it and change it later in the admin page
 			$this->css_filepath = 'assets/css/twocheckout.css';
 
-			$this->id         = 'twocheckout_convert_plus';
+			$this->id         = self::PAYMENT_METHOD_ID;
 			$this->icon       = apply_filters( 'woocommerce_twocheckout_icon',
 				plugin_dir_url( __FILE__ ) . 'twocheckout.png' );
 			$this->has_fields = false;
@@ -95,7 +88,6 @@ function woocommerce_twocheckout_convert_plus() {
 			}
 
 			$this->add_actions();
-			$this->add_filters();
 		}
 
 		/**** Plugin methods ****/
@@ -111,27 +103,10 @@ function woocommerce_twocheckout_convert_plus() {
 					'process_admin_options',
 				] );
 
-			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_script' ] );
-
-
 			// Payment listener/API hook
-			add_action( 'woocommerce_api_2checkout_ipn', [ $this, 'check_ipn_response' ] );
+			add_action( 'woocommerce_api_2checkout_ipn_convert_plus', [ $this, 'check_ipn_response_convert_plus' ] );
 			add_action( 'woocommerce_api_payment_response', [ $this, 'check_payment_response' ] );
-
 		}
-
-		private function add_filters() {
-			//put your filters here
-
-		}
-
-		/**** Hooks methods ****/
-
-		//enqueue a script
-		function enqueue_script() {
-
-		}
-
 
 		/**
 		 * Logging method
@@ -147,7 +122,6 @@ function woocommerce_twocheckout_convert_plus() {
 			}
 		}
 
-
 		/**
 		 * Admin Panel Options
 		 * - Options for bits like 'title' and availability on a country-by-country basis
@@ -155,7 +129,6 @@ function woocommerce_twocheckout_convert_plus() {
 		 * @since 1.0.0
 		 */
 		public function admin_options() {
-
 			require_once plugin_dir_path( __FILE__ ) . 'templates/admin-options.php';
 		}
 
@@ -290,8 +263,6 @@ function woocommerce_twocheckout_convert_plus() {
 		 * @return array
 		 */
 		public function process_payment( $order_id ) {
-			global $woocommerce;
-
 			$order = new WC_Order( $order_id );
 			$order->update_meta_data( '_2co_order_type', 'convert_plus' );
 			$order->save_meta_data();
@@ -311,20 +282,14 @@ function woocommerce_twocheckout_convert_plus() {
 					$order_params['billing_data']
 				);
 
-				$helper                       = new WC_Twocheckout_Convert_Plus_Ipn_Helper( $buy_link_params,
-					$this->secret_key, $this->debug, $order );
-				$buy_link_params['signature'] = $helper->get_signature(
-					$this->seller_id,
-					$this->secret_word,
-					$buy_link_params );
-
-        $pay_url = 'https://secure.2checkout.com/checkout/buy?' . http_build_query($buy_link_params);
+				$helper = new WC_Twocheckout_Convert_Plus_Ipn_Helper( $buy_link_params, $this->secret_key, $this->debug, $order );
+				$buy_link_params['signature'] = $helper->get_signature( $this->seller_id, $this->secret_word );
+				$pay_url = 'https://secure.2checkout.com/checkout/buy?' . http_build_query( $buy_link_params );
 
 				return [
-					'result'  => 'success',
-					'redirect' => $pay_url 
+					'result'   => 'success',
+					'redirect' => $pay_url,
 				];
-
 
 			} catch ( Exception $e ) {
 				wc_add_notice( $e->getMessage(), $notice_type = 'error' );
@@ -336,17 +301,83 @@ function woocommerce_twocheckout_convert_plus() {
 			}
 		}
 
+		/**
+		 * @param int    $order_id
+		 * @param null   $amount
+		 * @param string $reason
+		 *
+		 * @return bool|\WP_Error
+		 * @throws \Exception
+		 */
+		public function process_refund( $order_id, $amount = null, $reason = '' ) {
+			$order = wc_get_order( $order_id );
+			if ( $order->get_payment_method() == self::PAYMENT_METHOD_ID ) {
+				$transaction_id = $order->get_meta( '__2co_order_number' );
+
+				require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+				$api = new Two_Checkout_Api();
+				$api->set_seller_id( $this->seller_id );
+				$api->set_secret_key( $this->secret_key );
+				$tco_order = $api->call( 'orders/' . $transaction_id . '/', [], 'GET' );
+				if ( ! $order || ! $tco_order || ! $transaction_id ) {
+					$this->log( sprintf( 'Tried to refund order with order ID %s but it has no registered transaction ID, aborting.', $order_id ) );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Unable to refund transaction' );
+				}
+
+				if ( $amount != $tco_order['GrossPrice'] ) {
+					$this->log( 'Only full refund is supported!' );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Only full refund is supported.' );
+				}
+
+				if ( strtolower( get_woocommerce_currency() ) != strtolower( $tco_order['Currency'] ) ) {
+					$this->log( 'Order currency not matching the 2checkout response!' );
+
+					return new WP_Error( '2co_refund_error', 'Refund Error: Order currency not matching the 2checkout response.' );
+				}
+
+
+				$params = [
+					"amount"  => $amount,
+					"comment" => $reason,
+					"reason"  => 'Other'
+				];
+
+				$response = $api->call( '/orders/' . $transaction_id . '/refund/', $params, 'POST' );
+
+				if ( isset( $response['error_code'] ) && ! empty( $response['error_code'] ) ) {
+					$this->log( 'Refund failed. Please login to your 2Checkout admin to issue the partial refund manually.' );
+
+					return new WP_Error( '2co_refund_error', 'Refund failed. Please login to your 2Checkout admin to issue the partial refund manually.' );
+				}
+
+				$order->update_meta_data( '__2co_order_number', $response['id'] );
+				$order->add_order_note( __( sprintf( 'Refunded %s out of a total of %s from order', $amount, $order->get_total() ) ) );
+				$order->save_meta_data();
+				$order->save();
+
+				return true;
+			}
+		}
+
+		/**
+		 * @param WC_Order $order
+		 *
+		 * @return array
+		 */
 		public function build_checkout_parameters( WC_Order $order ) {
+			global $woocommerce;
+			$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
 
 			//1. Setup data
 			$setup_data             = [];
 			$setup_data['merchant'] = $this->seller_id;
 			$setup_data['dynamic']  = 1;
-
 			//2. Set the BASE needed fields.
-			$cart_data               = [];
-			$cart_data['src']        = self::SRC;
-			$cart_data['return-url'] = add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ). "&pm={$order->get_payment_method()}"."&order-ext-ref={$order->get_id()}";
+			$cart_data                     = [];
+			$cart_data['src']              = 'WOOCOMMERCE_' . $woocommerce_version_formatted;
+			$cart_data['return-url']       = add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ) . "&pm={$order->get_payment_method()}" . "&order-ext-ref={$order->get_id()}";
 			$cart_data['return-type']      = 'redirect';
 			$cart_data['expiration']       = time() + ( 3600 * 5 );
 			$cart_data['order-ext-ref']    = $order->get_id();
@@ -364,18 +395,17 @@ function woocommerce_twocheckout_convert_plus() {
 			//4. Products
 			$products = $this->get_item( $order );
 			//dynamic products
-			$products_data["prod"]     = implode( ';', $products['prod'] );
-			$products_data["price"]    = implode(
+			$products_data['prod']     = implode( ';', $products['prod'] );
+			$products_data['price']    = implode(
 				';',
 				$products['price']
 			);
-			$products_data["qty"]      = implode( ';', $products['qty'] );
-			$products_data["type"]     = implode( ';', $products['type'] );
-			$products_data["tangible"] = implode(
+			$products_data['qty']      = implode( ';', $products['qty'] );
+			$products_data['type']     = implode( ';', $products['type'] );
+			$products_data['tangible'] = implode(
 				';',
 				$products['tangible']
 			);
-
 
 			return [
 				'setup_data'    => $setup_data,
@@ -393,15 +423,16 @@ function woocommerce_twocheckout_convert_plus() {
 		 */
 		private function get_billing_details( WC_Order $order ) {
 			return [
-				'name'     => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
-				'phone'    => $order->get_billing_phone(),
-				'country'  => strtoupper( $order->get_billing_country() ),
-				'state'    => $order->get_billing_state(),
-				'email'    => $order->get_billing_email(),
-				'address'  => $order->get_billing_address_1(),
-				'address2' => $order->get_billing_address_2(),
-				'city'     => $order->get_billing_city(),
-				'zip'      => $order->get_billing_postcode(),
+				'name'         => $order->get_billing_first_name() . ' ' . $order->get_billing_last_name(),
+				'phone'        => $order->get_billing_phone(),
+				'country'      => strtoupper( $order->get_billing_country() ),
+				'state'        => $order->get_billing_state(),
+				'email'        => $order->get_billing_email(),
+				'address'      => $order->get_billing_address_1(),
+				'address2'     => $order->get_billing_address_2(),
+				'city'         => $order->get_billing_city(),
+				'zip'          => $order->get_billing_postcode(),
+				'company-name' => $order->get_billing_company(),
 			];
 		}
 
@@ -441,14 +472,13 @@ function woocommerce_twocheckout_convert_plus() {
 			return $items;
 		}
 
-
 		/**
 		 * Validate & process 2Checkout request
 		 *
 		 * @access public
-		 * @return void
+		 * @return void|string
 		 */
-		public function check_ipn_response() {
+		public function check_ipn_response_convert_plus() {
 			if ( $_SERVER['REQUEST_METHOD'] === 'GET' ) {
 				return;
 			}
@@ -456,12 +486,13 @@ function woocommerce_twocheckout_convert_plus() {
 			unset( $params['wc-api'] );
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );
-				if ( $order && $order->get_payment_method() == 'twocheckout_convert_plus' ) {
+				if ( $order && $order->get_payment_method() == self::PAYMENT_METHOD_ID ) {
 					$this->load_helper();
 					try {
 						$helper = new WC_Twocheckout_Convert_Plus_Ipn_Helper( $params, $this->secret_key, $this->debug,
 							$order );
-					} catch ( Exception $ex ) {
+					}
+					catch ( Exception $ex ) {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}
@@ -482,54 +513,64 @@ function woocommerce_twocheckout_convert_plus() {
 		 * @return void
 		 */
 		public function check_payment_response() {
-			global $woocommerce;
 			$params = $_GET;
-			if ( isset( $params['pm'] ) && ! empty( $params['pm'] ) )
-			{
-				if ( $params['pm'] == 'twocheckout_convert_plus' )
-				{
-					if ( isset($params['order-ext-ref']) && ! empty( $params['order-ext-ref'] ) )
-					{
-						$order = wc_get_order( (int) $params['order-ext-ref'] );
-						if ( ! $order instanceof WC_Order )
-						{
-							$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: ' . strip_tags( http_build_query( $params ) ) );
-						}
-						else
-						{
-							if ( isset( $params['refno'] ) && ! empty( $params['refno'] ) )
-							{
-								$refNo = $params['refno'];
-								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
-								$api = new Two_Checkout_Api();
-								$api->set_seller_id( $this->seller_id );
-								$api->set_secret_key( $this->secret_key );
-								$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
-
-								if(!empty($api_response['Status']) && isset($api_response['Status'])){
-									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) )
-									{
-										$redirect_url = $order->get_checkout_order_received_url();
-										if ( wp_redirect( $redirect_url ) )
-										{
-											if ( $order->has_status( 'pending' ) )
-											{
-												$order->update_status( 'processing' );
-											}
-											$woocommerce->cart->empty_cart();
-											exit;
-										}
-									}
-								}
-							}
-						}
-					}
-					status_header( 404 );
-					nocache_headers();
-					include( get_query_template( '404' ) );
-					die();
-				}
+			if ( ! isset( $params['pm'] ) || (string) $params['pm'] !== self::PAYMENT_METHOD_ID ) {
+				return;
 			}
+
+			if ( ! isset( $params['order-ext-ref'] )
+			     || ! isset( $params['refno'] )
+			     || empty( $params['order-ext-ref'] )
+			     || empty( $params['refno'] )
+			) {
+				$this->go_to_404_page();
+			}
+
+			$order = wc_get_order( (int) $params['order-ext-ref'] );
+
+			if ( ! $order instanceof WC_Order ) {
+				$this->log( 'There was a request for an order that doesn\'t exist in current shop! Requested params: '
+				            . strip_tags( http_build_query( $params ) ) );
+				$this->go_to_404_page();
+			}
+
+			$refNo = $params['refno'];
+			require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+			$api = new Two_Checkout_Api();
+			$api->set_seller_id( $this->seller_id );
+			$api->set_secret_key( $this->secret_key );
+			$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
+
+			if ( ! isset( $api_response['Status'] )
+			     || empty( $api_response['Status'] )
+			     || ! in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] )
+			) {
+				$this->log( 'Api did not respond with expected result' );
+				$this->go_to_404_page();
+			}
+
+			$redirect_url = $order->get_checkout_order_received_url();
+			if ( wp_redirect( $redirect_url ) ) {
+				if ( $order->has_status( 'pending' ) ) {
+					$order->update_status( 'processing' );
+					$order->update_meta_data( '__2co_order_number', $params['refno'] );
+					$order->save_meta_data();
+					$order->save();
+				}
+				global $woocommerce;
+				$woocommerce->cart->empty_cart();
+			}
+		}
+
+		/**
+		 * Returns a 404 page
+		 */
+		private function go_to_404_page()
+		{
+			status_header( 404 );
+			nocache_headers();
+			include( get_query_template( '404' ) );
+			die;
 		}
 	}
 
