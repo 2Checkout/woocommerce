@@ -13,7 +13,7 @@
         <td class="forminp">
             <fieldset>
                 <legend class="screen-reader-text"><span><?php esc_html_e( 'IPN Callback URL', 'woocommerce' ); ?></span></legend>
-                <input class="input-text regular-input" type="text" value="<?php echo add_query_arg( 'wc-api', '2checkout_ipn', home_url( '/' ) ); ?>" readonly>
+                <input class="input-text regular-input" type="text" value="<?php echo add_query_arg( 'wc-api', '2checkout_ipn_api', home_url( '/' ) ); ?>" readonly>
                 <p class="description"><?php esc_html_e( 'The callback endpoint for IPN requests from 2Checkout', 'woocommerce' ); ?></p>
             </fieldset>
         </td>

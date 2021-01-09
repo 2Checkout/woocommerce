@@ -83,7 +83,7 @@ function woocommerce_twocheckout() {
 
 			// Payment listener/API hook
 			add_action( 'woocommerce_api_payment_response', [ $this, 'check_api_payment_response' ] );
-			add_action( 'woocommerce_api_2checkout_ipn', [ $this, 'check_ipn_response' ] );
+			add_action( 'woocommerce_api_2checkout_ipn_api', [ $this, 'check_ipn_response_api' ] );
 
 			// Order Page filter
 			// add_filter( 'woocommerce_available_payment_gateways', array( $this, 'prepare_order_pay_page' ) );
@@ -570,7 +570,7 @@ function woocommerce_twocheckout() {
 		 * @access public
 		 * @return void
 		 */
-		public function check_ipn_response() {
+		public function check_ipn_response_api() {
 			if ( $_SERVER['REQUEST_METHOD'] === 'GET' ) {
 				return;
 			}

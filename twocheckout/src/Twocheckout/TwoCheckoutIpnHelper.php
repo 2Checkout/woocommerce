@@ -19,8 +19,12 @@ final class Two_Checkout_Ipn_Helper {
 	const ORDER_STATUS_SUSPECT = 'SUSPECT';
 	const ORDER_STATUS_INVALID = 'INVALID';
 	const ORDER_STATUS_COMPLETE = 'COMPLETE';
-	const ORDER_STATUS_REFUND = 'REFUNDED';
+	const ORDER_STATUS_REFUND = 'REFUND';
 	const ORDER_STATUS_REVERSED = 'REVERSED';
+	const WC_ORDER_STATUS_PENDING = 'PENDING';
+	const WC_ORDER_STATUS_PROCESSING = 'PROCESSING';
+	const WC_ORDER_STATUS_COMPLETE = 'COMPLETED';
+	const WC_ORDER_STATUS_REFUND = 'REFUNDED';
 
 	const ORDER_STATUS_PAYMENT_RECEIVED = 'PAYMENT_RECEIVED';
 	const ORDER_STATUS_CANCELED = 'CANCELED';
@@ -74,15 +78,29 @@ final class Two_Checkout_Ipn_Helper {
 	/**
 	 * @return bool
 	 */
+	protected function _is_order_pending() {
+		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_PENDING;
+	}
+
+	/**
+	 * @return bool
+	 */
+	protected function _is_order_processing() {
+		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_PROCESSING;
+	}
+
+	/**
+	 * @return bool
+	 */
 	protected function _is_order_completed() {
-		return strtoupper($this->wc_order->get_status()) == self::ORDER_STATUS_COMPLETE;
+		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_COMPLETE;
 	}
 
 	/**
 	 * @return bool
 	 */
 	protected function _is_order_refunded() {
-		return strtoupper($this->wc_order->get_status()) == self::ORDER_STATUS_REFUND;
+		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_REFUND;
 	}
 
 	/**
@@ -110,14 +128,14 @@ final class Two_Checkout_Ipn_Helper {
 				case self::ORDER_STATUS_PENDING:
 				case self::ORDER_STATUS_PURCHASE_PENDING:
 				case self::ORDER_STATUS_PENDING_APPROVAL:
-					if ( ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
+				if ( ! $this->_is_order_pending() && ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
 						$this->wc_order->update_status( 'pending' );
 						$this->wc_order->add_order_note( __( "Order status changed to: Pending" ), false, false );
 					}
 					break;
 
 				case self::ORDER_STATUS_PAYMENT_AUTHORIZED:
-					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
+					if ( ! $this->_is_order_processing() && ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
 						$this->wc_order->update_status( 'processing' );
 						$this->wc_order->add_order_note( __( "Order status changed to: Processing" ), false, false );
 					}
@@ -249,7 +267,7 @@ final class Two_Checkout_Ipn_Helper {
 					break;
 
 				case self::FRAUD_STATUS_APPROVED:
-					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded()) {
+					if ( ! $this->_is_order_processing() && ! $this->_is_order_completed() && ! $this->_is_order_refunded()) {
 						$this->wc_order->update_status( 'processing' );
 						$this->wc_order->add_order_note( __( "Order status changed to processing" ), false, false );
 					}

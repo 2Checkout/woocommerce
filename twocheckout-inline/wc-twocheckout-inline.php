@@ -98,8 +98,8 @@ function woocommerce_twocheckout_inline() {
 
 			// Payment listener/API hook
 			add_action( 'woocommerce_api_payment_response', [ $this, 'check_inline_payment_response' ] );
-			add_action( 'woocommerce_api_2checkout_ipn',
-				[ $this, 'check_ipn_response' ] );
+			add_action( 'woocommerce_api_2checkout_ipn_inline',
+				[ $this, 'check_ipn_response_inline' ] );
 
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_style' ] );
 			add_action( 'wp_enqueue_scripts', [ $this, 'enqueue_script' ] );
@@ -515,7 +515,7 @@ function woocommerce_twocheckout_inline() {
 		 * @access public
 		 * @return void
 		 */
-		public function check_ipn_response() {
+		public function check_ipn_response_inline() {
 			if ( $_SERVER['REQUEST_METHOD'] !== 'POST' ) {
 				return;
 			}
