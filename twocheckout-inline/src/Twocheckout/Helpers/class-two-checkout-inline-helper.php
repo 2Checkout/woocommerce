@@ -78,6 +78,7 @@ class Two_Checkout_Inline_Helper {
 		]);
 	}
 
+
 	/**
 	 * @param $data
 	 *

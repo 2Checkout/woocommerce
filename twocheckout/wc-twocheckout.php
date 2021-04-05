@@ -251,6 +251,18 @@ function woocommerce_twocheckout() {
 		}
 
 		/**
+		 * IPv6 is not supported by API 6.0
+		 *
+		 * @param $ip
+		 *
+		 * @return bool
+		 */
+		public function is_ipv6($ip)
+		{
+			return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6);
+		}
+
+		/**
 		 * @param int    $order_id
 		 * @param null   $amount
 		 * @param string $reason
@@ -320,7 +332,6 @@ function woocommerce_twocheckout() {
 		 * @return array
 		 */
 		public function process_payment( $order_id ) {
-			global $woocommerce;
 			$post_data = $_POST;
 
 			$order       = new WC_Order( $order_id );
@@ -330,13 +341,14 @@ function woocommerce_twocheckout() {
 
 			$country_code = strtoupper( $order->get_billing_country() );
 			try {
+				global $woocommerce;
+				$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
 
 				$order_params = [
 					'Currency'          => get_woocommerce_currency(),
 					'Language'          => strtoupper( substr( get_locale(), 0, 2 ) ),
 					'Country'           => $country_code,
-					'CustomerIP'        => $customer_ip,
-					'Source'            => 'WOOCOMMERCE_3_8',
+					'Source'            => 'WOOCOMMERCE_' . $woocommerce_version_formatted,
 					'ExternalReference' => $order_id,
 					'Items'             => $this->get_item( $total ),
 					'BillingDetails'    => $this->get_billing_details( $post_data, $country_code ),
@@ -347,6 +359,10 @@ function woocommerce_twocheckout() {
 						wc_get_cart_url()
 					)
 				];
+
+				if ( ! $this->is_ipv6( $customer_ip ) ) {
+					$order_params['CustomerIP'] = $customer_ip;
+				}
 
 				$api = new Two_Checkout_Api();
 				$api->set_seller_id( $this->seller_id );
@@ -490,16 +506,21 @@ function woocommerce_twocheckout() {
 			string $cancel_url
 		) {
 
-			return [
+			$payload = [
 				'Type'          => strtolower( $this->test_order ) === 'yes' ? 'TEST' : 'EES_TOKEN_PAYMENT',
 				'Currency'      => get_woocommerce_currency(),
-				'CustomerIP'    => $customer_ip,
 				'PaymentMethod' => [
 					'EesToken'           => $token,
 					'Vendor3DSReturnURL' => $success_url,
 					'Vendor3DSCancelURL' => $cancel_url
 				],
 			];
+
+			if( ! $this->is_ipv6( $customer_ip)) {
+				$payload['CustomerIP'] = $customer_ip;
+			}
+
+			return $payload;
 		}
 
 		/**

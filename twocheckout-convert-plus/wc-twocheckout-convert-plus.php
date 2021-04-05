@@ -249,6 +249,7 @@ function woocommerce_twocheckout_convert_plus() {
 			return true;
 		}
 
+
 		private function load_helper() {
 			require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/Helpers/class-convert-plus-helper.php';
 		}
@@ -269,7 +270,7 @@ function woocommerce_twocheckout_convert_plus() {
 			$order->save();
 			$this->load_helper();
 
-			try {
+			try { 
 				$buy_link_params = [];
 				$order_params    = $this->build_checkout_parameters( $order );
 
@@ -323,6 +324,17 @@ function woocommerce_twocheckout_convert_plus() {
 					$this->log( sprintf( 'Tried to refund order with order ID %s but it has no registered transaction ID, aborting.', $order_id ) );
 
 					return new WP_Error( '2co_refund_error', 'Refund Error: Unable to refund transaction' );
+				}
+
+				if($order->get_currency() !== $tco_order['PayoutCurrency']) {
+					$this->log( sprintf('Attempted to refund order in other currency %s while the order was placed in currency %s. Aborting.',
+						$order->get_currency(),
+						$tco_order['PayoutCurrency']
+					) );
+
+					return new WP_Error( '2co_refund_error', sprintf('Refund Error: Cannot refund order in currency %s as it was placed in another currency',
+						strtoupper($order->get_currency())
+					) );
 				}
 
 				if ( $amount != $tco_order['GrossPrice'] ) {

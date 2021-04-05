@@ -67,7 +67,7 @@ function inlinePay() {
                 jQuery('#tcoWait').hide();
                 if (response.result === "failure") {
                     if (response.step !== "undefined") {
-                        var notice_wrapper = jQuery('.woocommerce-notices-wrapper');
+                        var notice_wrapper = jQuery('.woocommerce-notices-wrapper').first();
                         notice_wrapper.empty();
                         notice_wrapper.append('<ul class="woocommerce-error" role="alert"><li>' + response.messages + '</li> </ul>');
                         jQuery("html, body").animate({scrollTop: 0}, 1500);

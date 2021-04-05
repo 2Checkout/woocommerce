@@ -39,8 +39,6 @@ function woocommerce_twocheckout_inline() {
 		private $custom_style;
 		private $debug;
 
-		const SRC = 'WOOCOMMERCE_3_8';
-
 		/**
 		 * WC_Gateway_Twocheckout_Inline constructor.
 		 */
@@ -305,6 +303,17 @@ function woocommerce_twocheckout_inline() {
 					return new WP_Error( '2co_refund_error', 'Refund Error: Unable to refund transaction' );
 				}
 
+				if($order->get_currency() !== $tco_order['PayoutCurrency']) {
+					$this->log( sprintf('Refund Error: Cannot refund order in currency %s as it was placed in currency %s',
+						strtoupper($order->get_currency()),
+						strtoupper($tco_order['PayoutCurrency'])
+					) );
+
+					return new WP_Error( '2co_refund_error', sprintf('Attempted to refund order in other currency %s while the order was placed in a different currency',
+						$order->get_currency()
+					) );
+				}
+
 				if ( $amount != $tco_order['GrossPrice'] ) {
 					$this->log( 'Only full refund is supported!' );
 
@@ -316,7 +325,6 @@ function woocommerce_twocheckout_inline() {
 
 					return new WP_Error( '2co_refund_error', 'Refund Error: Order currency not matching the 2checkout response.' );
 				}
-
 
 				$params = [
 					"amount"  => $amount,
@@ -354,8 +362,11 @@ function woocommerce_twocheckout_inline() {
 			$order = new WC_Order( $order_id );
 			$this->inline_helper();
 			$helper = new Two_Checkout_Inline_Helper();
+			global $woocommerce;
+			$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
 
 			try {
+				$helper->is_customer_ip_valid($order->get_customer_ip_address());
 				$order_params = [
 					'currency'         => get_woocommerce_currency(),
 					'language'         => strtoupper( substr( get_locale(), 0,
@@ -369,7 +380,7 @@ function woocommerce_twocheckout_inline() {
 					'test'             => strtolower( $this->test_order ) === 'yes' ? '1' : '0',
 					'order-ext-ref'    => $order->get_id(),
 					'customer-ext-ref' => $order->get_billing_email(),
-					'src'              => self::SRC,
+					'src'              => 'WOOCOMMERCE_' . $woocommerce_version_formatted,
 					'mode'             => 'DYNAMIC',
 					'dynamic'          => '1',
 					'merchant'         => $this->seller_id,
