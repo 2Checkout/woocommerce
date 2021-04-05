@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Convert Plus Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 1.2.0
+  Version: 1.2.1
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
