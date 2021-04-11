@@ -366,7 +366,6 @@ function woocommerce_twocheckout_inline() {
 			$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
 
 			try {
-				$helper->is_customer_ip_valid($order->get_customer_ip_address());
 				$order_params = [
 					'currency'         => get_woocommerce_currency(),
 					'language'         => strtoupper( substr( get_locale(), 0,
