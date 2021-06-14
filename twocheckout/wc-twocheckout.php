@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 1.2.2
+  Version: 2.2.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -44,6 +44,7 @@ function woocommerce_twocheckout() {
 		private $default_style;
 		private $custom_style;
 		private $debug;
+		private $complete_order_on_payment;
 
 		/**
 		 * WC_Gateway_Twocheckout constructor.
@@ -62,14 +63,15 @@ function woocommerce_twocheckout() {
 			$this->init_settings();
 
 			// Define user set variables
-			$this->title         = $this->get_option( 'title' );
-			$this->seller_id     = $this->get_option( 'seller_id' );
-			$this->secret_key    = $this->get_option( 'secret_key' );
-			$this->default_style = $this->get_option( 'default' );
-			$this->custom_style  = $this->get_option( 'style' );
-			$this->test_order    = $this->get_option( 'demo' );
-			$this->description   = $this->get_option( 'description' );
-			$this->debug         = $this->get_option( 'debug' );
+			$this->title                     = $this->get_option( 'title' );
+			$this->seller_id                 = $this->get_option( 'seller_id' );
+			$this->secret_key                = $this->get_option( 'secret_key' );
+			$this->default_style             = $this->get_option( 'default' );
+			$this->custom_style              = $this->get_option( 'style' );
+			$this->test_order                = $this->get_option( 'demo' );
+			$this->description               = $this->get_option( 'description' );
+			$this->debug                     = $this->get_option( 'debug' );
+			$this->complete_order_on_payment = ( $this->get_option( 'complete_order_on_payment' ) == 'Yes' ) ? true : false;
 
 			self::$log_enabled = $this->debug;
 
@@ -257,14 +259,13 @@ function woocommerce_twocheckout() {
 		 *
 		 * @return bool
 		 */
-		public function is_ipv6($ip)
-		{
-			return filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6);
+		public function is_ipv6( $ip ) {
+			return filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 );
 		}
 
 		/**
-		 * @param int    $order_id
-		 * @param null   $amount
+		 * @param int $order_id
+		 * @param null $amount
 		 * @param string $reason
 		 *
 		 * @return bool|\WP_Error
@@ -342,7 +343,7 @@ function woocommerce_twocheckout() {
 			$country_code = strtoupper( $order->get_billing_country() );
 			try {
 				global $woocommerce;
-				$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
+				$woocommerce_version_formatted = str_replace( '.', '_', $woocommerce->version );
 
 				$order_params = [
 					'Currency'          => get_woocommerce_currency(),
@@ -415,7 +416,6 @@ function woocommerce_twocheckout() {
 								'redirect' => $redirect_url,
 							];
 						} else {
-							$order->update_status( 'processing' );
 							$json_response = [
 								'result'   => 'success',
 								'messages' => 'Order payment success',
@@ -428,8 +428,7 @@ function woocommerce_twocheckout() {
 				}
 
 				return $json_response;
-			}
-			catch ( Exception $e ) {
+			} catch ( Exception $e ) {
 				wc_add_notice( $e->getMessage(), $notice_type = 'error' );
 
 				return false;
@@ -438,7 +437,7 @@ function woocommerce_twocheckout() {
 
 
 		/**
-		 * @param array  $post_data
+		 * @param array $post_data
 		 * @param string $country_code
 		 *
 		 * @return array
@@ -516,7 +515,7 @@ function woocommerce_twocheckout() {
 				],
 			];
 
-			if( ! $this->is_ipv6( $customer_ip)) {
+			if ( ! $this->is_ipv6( $customer_ip ) ) {
 				$payload['CustomerIP'] = $customer_ip;
 			}
 
@@ -563,7 +562,6 @@ function woocommerce_twocheckout() {
 										$redirect_url = $order->get_checkout_order_received_url();
 										if ( wp_redirect( $redirect_url ) ) {
 											if ( $order->has_status( 'pending' ) ) {
-												$order->update_status( 'processing' );
 												$order->update_meta_data( '__2co_order_number', $refNo );
 												$order->save_meta_data();
 												$order->save();
@@ -600,11 +598,10 @@ function woocommerce_twocheckout() {
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );
 				if ( $order && $order->get_payment_method() == 'twocheckout' ) {
-					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelper.php';
+					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelperApi.php';
 					try {
-						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->debug, $order );
-					}
-					catch ( Exception $ex ) {
+						$ipn_helper = new Two_Checkout_Ipn_Helper_Api( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+					} catch ( Exception $ex ) {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}

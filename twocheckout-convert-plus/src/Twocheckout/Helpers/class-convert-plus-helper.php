@@ -43,23 +43,27 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	protected $wc_order;
 	protected $request_params;
 	protected $secret_key;
+	protected $complete_order_on_payment;
 	/**
 	 * @var WC_Logger
 	 */
 	public static $log_enabled = false;
 
 	/**
-	 * Two_Checkout_Ipn_Helper constructor.
+	 * WC_Twocheckout_Convert_Plus_Ipn_Helper constructor.
 	 *
 	 * @param array $request_params
 	 * @param string $secret_key
-	 * @param $debug
+	 * @param bool $complete_order_on_payment
+	 * @param bool $debug
+	 * @param WC_Order $order
 	 */
-	public function __construct( array $request_params, string $secret_key, bool $debug, WC_Order $order ) {
-		$this->request_params = $request_params;
-		$this->secret_key     = $secret_key;
-		self::$log_enabled    = $debug;
-		$this->wc_order       = $order;
+	public function __construct( array $request_params, string $secret_key, bool $complete_order_on_payment, bool $debug, WC_Order $order ) {
+		$this->request_params            = $request_params;
+		$this->secret_key                = $secret_key;
+		$this->complete_order_on_payment = $complete_order_on_payment;
+		self::$log_enabled               = $debug;
+		$this->wc_order                  = $order;
 	}
 
 
@@ -255,9 +259,9 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 					break;
 
 				case self::FRAUD_STATUS_APPROVED:
-					if ( ! $this->_is_order_processing() && ! $this->_is_order_completed() && ! $this->_is_order_refunded()) {
-						$this->wc_order->update_status( 'processing' );
-						$this->wc_order->add_order_note( __( "Order status changed to processing" ), false, false );
+					if ( ! $this->_is_order_pending() && ! $this->_is_order_processing() && ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
+						$this->wc_order->update_status( 'pending' );
+						$this->wc_order->add_order_note( __( "Order status changed to: Pending" ), false, false );
 					}
 					break;
 			}
@@ -276,28 +280,28 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	 * @return bool
 	 */
 	protected function _is_order_pending() {
-		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_PENDING;
+		return strtoupper( $this->wc_order->get_status() ) == self::WC_ORDER_STATUS_PENDING;
 	}
 
 	/**
 	 * @return bool
 	 */
 	protected function _is_order_processing() {
-		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_PROCESSING;
+		return strtoupper( $this->wc_order->get_status() ) == self::WC_ORDER_STATUS_PROCESSING;
 	}
 
 	/**
 	 * @return bool
 	 */
 	protected function _is_order_completed() {
-		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_COMPLETE;
+		return strtoupper( $this->wc_order->get_status() ) == self::WC_ORDER_STATUS_COMPLETE;
 	}
 
 	/**
 	 * @return bool
 	 */
 	protected function _is_order_refunded() {
-		return strtoupper($this->wc_order->get_status()) == self::WC_ORDER_STATUS_REFUND;
+		return strtoupper( $this->wc_order->get_status() ) == self::WC_ORDER_STATUS_REFUND;
 	}
 
 	/**
@@ -324,6 +328,13 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	}
 
 	/**
+	 * @return bool
+	 */
+	private function getCompleteOrderOnPayment() {
+		return $this->complete_order_on_payment;
+	}
+
+	/**
 	 * @throws Exception
 	 */
 	protected function _processorder_status() {
@@ -333,7 +344,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 				case self::ORDER_STATUS_PENDING:
 				case self::ORDER_STATUS_PURCHASE_PENDING:
 				case self::ORDER_STATUS_PENDING_APPROVAL:
-				if ( ! $this->_is_order_pending() && ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
+					if ( ! $this->_is_order_pending() && ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
 						$this->wc_order->update_status( 'pending' );
 						$this->wc_order->add_order_note( __( "Order status changed to: Pending" ), false, false );
 					}
@@ -341,19 +352,21 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 
 
 				case self::ORDER_STATUS_PAYMENT_AUTHORIZED:
-					if ( ! $this->_is_order_processing() && ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
-						$this->wc_order->update_status( 'processing' );
-						$this->wc_order->add_order_note( __( "Order status changed to: Processing" ), false, false );
+					if ( ! $this->_is_order_pending() && ! $this->_is_order_processing() && ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
+						$this->wc_order->update_status( 'pending' );
+						$this->wc_order->add_order_note( __( "Order status changed to: Pending" ), false, false );
 					}
 					break;
 
 				case self::ORDER_STATUS_COMPLETE:
-					if ( ! $this->_is_order_completed()  && ! $this->_is_order_refunded()) {
-						$this->wc_order->update_status( 'completed' );
-						$this->wc_order->payment_complete();
-						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ),false, false );
+					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
 						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $this->request_params['REFNO'] );
 						$this->wc_order->save_meta_data();
+						$this->wc_order->payment_complete();
+						if ( $this->getCompleteOrderOnPayment() ) {
+							$this->wc_order->update_status( 'completed' );
+						}
+						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ), false, false );
 						$this->wc_order->add_order_note( __( "Order payment is completed." ), false, false );
 						$this->wc_order->save();
 					}

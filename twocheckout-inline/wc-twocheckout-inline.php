@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Inline Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 1.2.2
+  Version: 2.2.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -38,6 +38,7 @@ function woocommerce_twocheckout_inline() {
 		private $secret_word;
 		private $custom_style;
 		private $debug;
+		private $complete_order_on_payment;
 
 		/**
 		 * WC_Gateway_Twocheckout_Inline constructor.
@@ -56,14 +57,15 @@ function woocommerce_twocheckout_inline() {
 			$this->init_settings();
 
 			// Define user set variables
-			$this->title        = $this->get_option( 'title' );
-			$this->seller_id    = $this->get_option( 'seller_id' );
-			$this->secret_key   = $this->get_option( 'secret_key' );
-			$this->secret_word  = $this->get_option( 'secret_word' );
-			$this->custom_style = $this->get_option( 'style' );
-			$this->test_order   = $this->get_option( 'demo' );
-			$this->description  = $this->get_option( 'description' );
-			$this->debug        = $this->get_option( 'debug' );
+			$this->title                     = $this->get_option( 'title' );
+			$this->seller_id                 = $this->get_option( 'seller_id' );
+			$this->secret_key                = $this->get_option( 'secret_key' );
+			$this->secret_word               = $this->get_option( 'secret_word' );
+			$this->custom_style              = $this->get_option( 'style' );
+			$this->test_order                = $this->get_option( 'demo' );
+			$this->description               = $this->get_option( 'description' );
+			$this->debug                     = $this->get_option( 'debug' );
+			$this->complete_order_on_payment = ( $this->get_option( 'complete_order_on_payment' ) == 'Yes' ) ? true : false;
 
 			self::$log_enabled = $this->debug;
 
@@ -280,8 +282,8 @@ function woocommerce_twocheckout_inline() {
 		}
 
 		/**
-		 * @param int    $order_id
-		 * @param null   $amount
+		 * @param int $order_id
+		 * @param null $amount
 		 * @param string $reason
 		 *
 		 * @return bool|\WP_Error
@@ -303,13 +305,13 @@ function woocommerce_twocheckout_inline() {
 					return new WP_Error( '2co_refund_error', 'Refund Error: Unable to refund transaction' );
 				}
 
-				if($order->get_currency() !== $tco_order['PayoutCurrency']) {
-					$this->log( sprintf('Refund Error: Cannot refund order in currency %s as it was placed in currency %s',
-						strtoupper($order->get_currency()),
-						strtoupper($tco_order['PayoutCurrency'])
+				if ( $order->get_currency() !== $tco_order['PayoutCurrency'] ) {
+					$this->log( sprintf( 'Refund Error: Cannot refund order in currency %s as it was placed in currency %s',
+						strtoupper( $order->get_currency() ),
+						strtoupper( $tco_order['PayoutCurrency'] )
 					) );
 
-					return new WP_Error( '2co_refund_error', sprintf('Attempted to refund order in other currency %s while the order was placed in a different currency',
+					return new WP_Error( '2co_refund_error', sprintf( 'Attempted to refund order in other currency %s while the order was placed in a different currency',
 						$order->get_currency()
 					) );
 				}
@@ -363,7 +365,7 @@ function woocommerce_twocheckout_inline() {
 			$this->inline_helper();
 			$helper = new Two_Checkout_Inline_Helper();
 			global $woocommerce;
-			$woocommerce_version_formatted = str_replace('.', '_', $woocommerce->version);
+			$woocommerce_version_formatted = str_replace( '.', '_', $woocommerce->version );
 
 			try {
 				$order_params = [
@@ -404,8 +406,7 @@ function woocommerce_twocheckout_inline() {
 					'payload' => wp_json_encode( $order_params ),
 				];
 
-			}
-			catch ( Exception $e ) {
+			} catch ( Exception $e ) {
 				wc_add_notice( $e->getMessage(), $notice_type = 'error' );
 
 				return [
@@ -498,7 +499,6 @@ function woocommerce_twocheckout_inline() {
 										$redirect_url = $order->get_checkout_order_received_url();
 										if ( wp_redirect( $redirect_url ) ) {
 											if ( $order->has_status( 'pending' ) ) {
-												$order->update_status( 'processing' );
 												$order->update_meta_data( '__2co_order_number', $params['refno'] );
 												$order->save_meta_data();
 												$order->save();
@@ -536,9 +536,8 @@ function woocommerce_twocheckout_inline() {
 				if ( $order && $order->get_payment_method() == 'twocheckout_inline' ) {
 					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/class-two-checkout-ipn-helper.php';
 					try {
-						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->debug, $order );
-					}
-					catch ( Exception $ex ) {
+						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+					} catch ( Exception $ex ) {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}

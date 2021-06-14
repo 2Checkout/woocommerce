@@ -63,5 +63,16 @@ function getTwoCheckoutConvertPlusFormFields() {
 			'desc_tip'    => true,
 			'description' => sprintf( __( 'Not available yet for this method!', 'woocommerce' ), wc_get_log_file_path( 'twocheckout' ) )
 		],
-	];
+        'complete_order_on_payment' => [
+            'desc_tip'    => true,
+            'title'       => __( 'Complete Order on Payment', 'woocommerce' ),
+            'type'        => 'select',
+            'label'       => __( 'Complete Order on Payment', 'woocommerce' ),
+            'options'     => [
+                'Yes' => 'Yes',
+                'No'  => 'No',
+            ],
+            'description' => __( 'Set order status to complete on successful payment.', 'woocommerce' ),
+        ],
+    ];
 }
