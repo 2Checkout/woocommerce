@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Convert Plus Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.2.0
+  Version: 2.2.1
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -560,7 +560,7 @@ function woocommerce_twocheckout_convert_plus() {
 				$this->log( 'Api did not respond with expected result' );
 				$this->go_to_404_page();
 			}
-
+			$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
 			$redirect_url = $order->get_checkout_order_received_url();
 			if ( wp_redirect( $redirect_url ) ) {
 				if ( $order->has_status( 'pending' ) ) {

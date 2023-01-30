@@ -74,5 +74,17 @@ function get_two_checkout_inline_form_fields() {
             ],
             'description' => __( 'Set order status to complete on successful payment.', 'woocommerce' ),
         ],
-	];
+        'inline_type'             => [
+            'title'               => __( 'Template', 'verifone-hosted' ),
+            'type'                => 'radio', // The type radio is handled by the custom function generate_radio_html
+            'description'         => __( 'Choose between a multi-step or a one-step inline checkout.', 'verifone-hosted' ),
+            'label'               => __( 'Template', 'verifone-hosted' ),
+            'options'             => [
+                'inline-one-step' => 'One step inline',
+                'inline'          => 'Multi step inline',
+            ],
+            'default'             => 'inline-one-step',
+            'desc_tip'            => true,
+        ],
+    ];
 }

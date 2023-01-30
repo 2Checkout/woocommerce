@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Inline Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.2.0
+  Version: 2.2.1
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -39,6 +39,10 @@ function woocommerce_twocheckout_inline() {
 		private $custom_style;
 		private $debug;
 		private $complete_order_on_payment;
+        private $inline_type;
+
+        const INLINE_TYPE_ONE_STEP = 'inline-one-step';
+        const INLINE_TYPE_MULTI_STEP = 'inline';
 
 		/**
 		 * WC_Gateway_Twocheckout_Inline constructor.
@@ -66,6 +70,7 @@ function woocommerce_twocheckout_inline() {
 			$this->description               = $this->get_option( 'description' );
 			$this->debug                     = $this->get_option( 'debug' );
 			$this->complete_order_on_payment = ( $this->get_option( 'complete_order_on_payment' ) == 'Yes' ) ? true : false;
+            $this->inline_type               = ( $this::INLINE_TYPE_ONE_STEP == $this->get_option( 'inline_type' ) ) ? $this::INLINE_TYPE_ONE_STEP : $this::INLINE_TYPE_MULTI_STEP;
 
 			self::$log_enabled = $this->debug;
 
@@ -385,6 +390,7 @@ function woocommerce_twocheckout_inline() {
 					'mode'             => 'DYNAMIC',
 					'dynamic'          => '1',
 					'merchant'         => $this->seller_id,
+                    'customization'    => isset( $this->inline_type ) && !empty( $this->inline_type ) ? $this->inline_type : $this::INLINE_TYPE_ONE_STEP,
 				];
 
 				$order_params = array_merge( $order_params,
@@ -496,6 +502,7 @@ function woocommerce_twocheckout_inline() {
 
 								if ( ! empty( $api_response['Status'] ) && isset( $api_response['Status'] ) ) {
 									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) ) {
+										$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
 										$redirect_url = $order->get_checkout_order_received_url();
 										if ( wp_redirect( $redirect_url ) ) {
 											if ( $order->has_status( 'pending' ) ) {
@@ -598,6 +605,56 @@ function woocommerce_twocheckout_inline() {
 				echo '<input type="hidden" name="order_id" value="' . esc_attr( $order->get_id() ) . '" />';
 			}
 		}
+
+        public function generate_radio_html($key, $data)
+        {
+            $field_key = $this->get_field_key( $key );
+            $defaults  = array(
+                'title'             => '',
+                'disabled'          => false,
+                'class'             => '',
+                'css'               => '',
+                'placeholder'       => '',
+                'type'              => 'text',
+                'desc_tip'          => false,
+                'description'       => '',
+                'custom_attributes' => array(),
+            );
+
+            $data = wp_parse_args( $data, $defaults );
+
+            $defaultValue = null;
+            foreach( $data["options"] as $optionValue => $optionLabel ) {
+                if( $defaultValue !== null && $optionValue === $this->get_option( $key ) ) {
+                    $defaultValue = $optionValue;
+                }
+            }
+
+            ob_start();
+            ?>
+            <tr valign="top">
+                <th scope="row" class="titledesc">
+                    <label for="<?php echo esc_attr( $field_key ); ?>"><?php echo wp_kses_post( $data['title'] ); ?> <?php echo $this->get_tooltip_html( $data ); ?></label>
+                </th>
+                <td class="forminp">
+                    <fieldset>
+                        <legend class="screen-reader-text"><span><?php echo wp_kses_post( $data['title'] ); ?></span></legend>
+                        <?php
+                        $selected_option = ( empty( $this->get_option( $key ) ) ) ? $this->get_field_default( $data ) : $this->get_option( $key );
+                        foreach ( $data["options"] as $optionValue => $optionLabel ) {
+                            ?>
+                            <input type="radio" name="<?php echo esc_attr( $field_key ); ?>" value="<?php echo $optionValue ?>" <?php checked($optionValue, $selected_option, true); ?>> <?php echo $optionLabel ?>
+                            <?php
+                        }
+                        echo $this->get_description_html($data);
+                        ?>
+                    </fieldset>
+                </td>
+            </tr>
+            <?php
+
+            return ob_get_clean();
+        }
 	}
 
 	/**
