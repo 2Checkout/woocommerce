@@ -19,6 +19,7 @@ final class Two_Checkout_Ipn_Helper {
 	const ORDER_STATUS_SUSPECT = 'SUSPECT';
 	const ORDER_STATUS_INVALID = 'INVALID';
 	const ORDER_STATUS_COMPLETE = 'COMPLETE';
+    const ORDER_STATUS_AUTH_RECEIVED = 'AUTHRECEIVED';
 	const ORDER_STATUS_REFUND = 'REFUND';
 	const ORDER_STATUS_REVERSED = 'REVERSED';
 	const WC_ORDER_STATUS_PENDING = 'PENDING';
@@ -70,10 +71,10 @@ final class Two_Checkout_Ipn_Helper {
 	/**
 	 * @return void
 	 */
-	protected function _process_fraud() {
+	protected function _process_fraud(string $fraudStatus) {
 
-		if ( isset( $this->request_params['FRAUD_STATUS'] ) ) {
-			switch ( trim( $this->request_params['FRAUD_STATUS'] ) ) {
+		if ( isset( $fraudStatus ) ) {
+			switch ( trim( $fraudStatus ) ) {
 				case self::FRAUD_STATUS_DENIED:
 				case self::ORDER_STATUS_INVALID:
 					$this->wc_order->update_status( 'failed' );
@@ -160,8 +161,7 @@ final class Two_Checkout_Ipn_Helper {
 	/**
 	 * @throws Exception
 	 */
-	protected function _processorder_status() {
-		$order_status = $this->request_params['ORDERSTATUS'];
+	function processorder_status(string $order_status,string $refNo) {
 		if ( ! empty( $order_status ) ) {
 			switch ( trim( $order_status ) ) {
 				case self::ORDER_STATUS_PENDING:
@@ -182,22 +182,24 @@ final class Two_Checkout_Ipn_Helper {
 					break;
 
 				case self::ORDER_STATUS_COMPLETE:
+                case self::ORDER_STATUS_AUTH_RECEIVED:
 					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
-						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $this->request_params['REFNO'] );
+						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $refNo );
 						$this->wc_order->save_meta_data();
 						$this->wc_order->payment_complete();
 						if ( $this->getCompleteOrderOnPayment() ) {
 							$this->wc_order->update_status( 'completed' );
 						}
-						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ), false, false );
+						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $refNo ), false, false );
 						$this->wc_order->add_order_note( __( "Order payment is completed." ), false, false );
-						$this->wc_order->save();
 					}
 					break;
 
 				default:
 					throw new Exception( 'Cannot handle Ipn message type for this request!' );
 			}
+
+            $this->wc_order->save();
 		}
 	}
 
@@ -207,10 +209,23 @@ final class Two_Checkout_Ipn_Helper {
 	 */
 	public function is_ipn_response_valid() {
 		$result       = '';
-		$receivedHash = $this->request_params['HASH'];
-		foreach ( $this->request_params as $key => $val ) {
 
-			if ( $key != "HASH" ) {
+        $receivedAlgo='sha3-256';
+		$receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
+
+        if(!$receivedHash){
+            $receivedAlgo='sha2-256';
+            $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
+        }
+
+        if(!$receivedHash){
+            $receivedAlgo='md5';
+            $receivedHash = $this->request_params['HASH'];
+        }
+
+        foreach ( $this->request_params as $key => $val ) {
+
+			if ( !in_array($key, ["HASH","SIGNATURE_SHA2_256","SIGNATURE_SHA3_256"]) ) {
 				if ( is_array( $val ) ) {
 					$result .= $this->array_expand( $val );
 				} else {
@@ -221,7 +236,7 @@ final class Two_Checkout_Ipn_Helper {
 		}
 
 		if ( isset( $this->request_params['REFNO'] ) && ! empty( $this->request_params['REFNO'] ) ) {
-			$calcHash = $this->generate_hash( $this->secret_key, $result );
+			$calcHash = $this->generate_hash( $this->secret_key, $result, $receivedAlgo );
 			if ( $receivedHash === $calcHash ) {
 				return true;
 			}
@@ -238,20 +253,24 @@ final class Two_Checkout_Ipn_Helper {
 	 *
 	 * @return string
 	 */
-	public function generate_hash( $key, $data ) {
-		$b = 64; // byte length for md5
-		if ( strlen( $key ) > $b ) {
-			$key = pack( "H*", md5( $key ) );
-		}
+    public function generate_hash($key, $data, $algo = 'sha3-256') {
+        if ('sha3-256' === $algo) {
+            return hash_hmac($algo, $data, $key);
+        }
 
-		$key    = str_pad( $key, $b, chr( 0x00 ) );
-		$ipad   = str_pad( '', $b, chr( 0x36 ) );
-		$opad   = str_pad( '', $b, chr( 0x5c ) );
-		$k_ipad = $key ^ $ipad;
-		$k_opad = $key ^ $opad;
+        $b = 64; // byte length for hash
+        if (strlen($key) > $b) {
+            $key = pack("H*", hash($algo, $key));
+        }
 
-		return md5( $k_opad . pack( "H*", md5( $k_ipad . $data ) ) );
-	}
+        $key = str_pad($key, $b, chr(0x00));
+        $ipad = str_pad('', $b, chr(0x36));
+        $opad = str_pad('', $b, chr(0x5c));
+        $k_ipad = $key ^ $ipad;
+        $k_opad = $key ^ $opad;
+
+        return hash($algo, $k_opad . pack("H*", hash($algo, $k_ipad . $data)));
+    }
 
 	/**
 	 * @return string
@@ -267,9 +286,9 @@ final class Two_Checkout_Ipn_Helper {
 			$this->request_params['REFNOEXT_D'] = ! empty( $order_id ) ? $order_id : 0;
 
 			if ( $this->wc_order->get_id() ) {
-				$this->_process_fraud();
+				$this->_process_fraud($this->request_params['FRAUD_STATUS']);
 				if ( ! $this->_is_fraud() ) {
-					$this->_processorder_status();
+					$this->processorder_status($this->request_params['ORDERSTATUS'],$this->request_params['REFNO']);
 				}
 			}
 		} catch ( Exception $ex ) {

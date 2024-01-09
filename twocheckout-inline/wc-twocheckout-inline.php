@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Inline Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.2.1
+  Version: 2.3.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -11,6 +11,8 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 } // Exit if accessed directly
+
+require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/class-two-checkout-ipn-helper.php';
 
 /* Add a custom payment class to WC
   ------------------------------------------------------------ */
@@ -504,15 +506,25 @@ function woocommerce_twocheckout_inline() {
 									if ( in_array( $api_response['Status'], [ 'AUTHRECEIVED', 'COMPLETE' ] ) ) {
 										$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
 										$redirect_url = $order->get_checkout_order_received_url();
-										if ( wp_redirect( $redirect_url ) ) {
-											if ( $order->has_status( 'pending' ) ) {
-												$order->update_meta_data( '__2co_order_number', $params['refno'] );
-												$order->save_meta_data();
-												$order->save();
-											}
-											$woocommerce->cart->empty_cart();
-											exit;
-										}
+
+                                        try {
+                                            $ipnHelper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+                                        } catch ( Exception $ex ) {
+                                            $this->log( 'Unable to find order with RefNo: ' . $params['order-ext-ref'] );
+                                            throw new Exception( 'An error occurred!' );
+                                        }
+
+                                        if (wp_redirect($redirect_url)) {
+                                            try {
+                                                $ipnHelper->processorder_status($api_response['Status'],$api_response['RefNo']);
+                                            }catch(\Exception $e){
+                                                $this->log(  __CLASS__ . ' line ' . __LINE__ . ' : ' . $e->getMessage() );
+                                                throw new Exception( 'An error occurred!' );
+                                            }
+
+                                            $woocommerce->cart->empty_cart();
+                                            exit;
+                                        }
 									}
 								}
 							}
@@ -541,7 +553,6 @@ function woocommerce_twocheckout_inline() {
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );
 				if ( $order && $order->get_payment_method() == 'twocheckout_inline' ) {
-					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/class-two-checkout-ipn-helper.php';
 					try {
 						$ipn_helper = new Two_Checkout_Ipn_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
 					} catch ( Exception $ex ) {
@@ -549,7 +560,7 @@ function woocommerce_twocheckout_inline() {
 						throw new Exception( 'An error occurred!' );
 					}
 					if ( ! $ipn_helper->is_ipn_response_valid() ) {
-						self::log( sprintf( 'MD5 hash mismatch for 2Checkout IPN with date: "%s" . ',
+						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );
 
 						return;
@@ -671,3 +682,9 @@ function woocommerce_twocheckout_inline() {
 	add_filter( 'woocommerce_payment_gateways',
 		'add_twocheckout_gateway_inline' );
 }
+
+add_action( 'before_woocommerce_init', function() {
+    if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __DIR__.'/'.__FILE__, true );
+    }
+} );

@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.2.1
+  Version: 2.3.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -11,6 +11,8 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 } // Exit if accessed directly
+
+require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelperApi.php';
 
 /* Add a custom payment class to WC
   ------------------------------------------------------------ */
@@ -276,7 +278,7 @@ function woocommerce_twocheckout() {
 			if ( $order->get_payment_method() == 'twocheckout' ) {
 				$transaction_id = $order->get_meta( '__2co_order_number' );
 
-				require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+                require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 				$api = new Two_Checkout_Api();
 				$api->set_seller_id( $this->seller_id );
 				$api->set_secret_key( $this->secret_key );
@@ -338,7 +340,6 @@ function woocommerce_twocheckout() {
 			$order       = new WC_Order( $order_id );
 			$total       = $order->get_total();
 			$customer_ip = $order->get_customer_ip_address();
-			require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 
 			$country_code = strtoupper( $order->get_billing_country() );
 			try {
@@ -365,6 +366,7 @@ function woocommerce_twocheckout() {
 					$order_params['CustomerIP'] = $customer_ip;
 				}
 
+                require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 				$api = new Two_Checkout_Api();
 				$api->set_seller_id( $this->seller_id );
 				$api->set_secret_key( $this->secret_key );
@@ -398,8 +400,6 @@ function woocommerce_twocheckout() {
 							'redirect' => null
 						];
 					} else {
-						$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
-
 						$order->update_meta_data( '__2co_order_number', $api_response['RefNo'] );
 						$has3ds = false;
 						if ( isset( $api_response['PaymentDetails']['PaymentMethod']['Authorize3DS'] ) ) {
@@ -423,6 +423,13 @@ function woocommerce_twocheckout() {
 								'reload'   => false,
 								'redirect' => $this->get_return_url( $order )
 							];
+
+                            try {
+                                $ipn_helper = new Two_Checkout_Ipn_Helper_Api( [], $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+                                $ipn_helper->processorder_status($api_response['Status'],$api_response['RefNo']);
+                            }catch(\Exception $ex){
+                                self::log($ex->getMessage());
+                            }
 						}
 					}
 				}
@@ -551,7 +558,8 @@ function woocommerce_twocheckout() {
 						} else {
 							if ( isset( $params['REFNO'] ) && ! empty( $params['REFNO'] ) ) {
 								$refNo = $params['REFNO'];
-								require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+
+                                require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 								$api = new Two_Checkout_Api();
 								$api->set_seller_id( $this->seller_id );
 								$api->set_secret_key( $this->secret_key );
@@ -598,7 +606,6 @@ function woocommerce_twocheckout() {
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );
 				if ( $order && $order->get_payment_method() == 'twocheckout' ) {
-					require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutIpnHelperApi.php';
 					try {
 						$ipn_helper = new Two_Checkout_Ipn_Helper_Api( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
 					} catch ( Exception $ex ) {
@@ -606,7 +613,7 @@ function woocommerce_twocheckout() {
 						throw new Exception( 'An error occurred!' );
 					}
 					if ( ! $ipn_helper->is_ipn_response_valid() ) {
-						self::log( sprintf( 'MD5 hash mismatch for 2Checkout IPN with date: "%s" . ',
+						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );
 
 						return;
@@ -655,3 +662,9 @@ function woocommerce_twocheckout() {
 
 	add_filter( 'woocommerce_payment_gateways', 'add_twocheckout_gateway_api' );
 }
+
+add_action( 'before_woocommerce_init', function() {
+    if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __DIR__.'/'.__FILE__, true );
+    }
+} );

@@ -1,6 +1,6 @@
 <?php
 
-class WC_Twocheckout_Convert_Plus_Ipn_Helper {
+class WC_Twocheckout_Convert_Plus_Helper {
 
 	/**
 	 * Ipn Constants
@@ -17,6 +17,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	const ORDER_STATUS_SUSPECT = 'SUSPECT';
 	const ORDER_STATUS_INVALID = 'INVALID';
 	const ORDER_STATUS_COMPLETE = 'COMPLETE';
+    const ORDER_STATUS_AUTH_RECEIVED = 'AUTHRECEIVED';
 	const ORDER_STATUS_REFUND = 'REFUND';
 	const ORDER_STATUS_REVERSED = 'REVERSED';
 	const WC_ORDER_STATUS_PENDING = 'PENDING';
@@ -50,7 +51,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	public static $log_enabled = false;
 
 	/**
-	 * WC_Twocheckout_Convert_Plus_Ipn_Helper constructor.
+	 * WC_Twocheckout_Convert_Plus_Helper constructor.
 	 *
 	 * @param array $request_params
 	 * @param string $secret_key
@@ -151,16 +152,37 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 		return str_replace( '=', '', strtr( base64_encode( $data ), '+/', '-_' ) );
 	}
 
+    /**
+     * @return array    [hash, algo]
+     */
+    protected function extractHashFromRequest():array {
+        $receivedAlgo = 'sha3-256';
+        $receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'sha256';
+            $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
+        }
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'md5';
+            $receivedHash = $this->request_params['HASH'];
+        }
+
+        return ['hash' => $receivedHash, 'algo' => $receivedAlgo];
+    }
+
 	/**
 	 * Validate Ipn request
 	 * @return bool
 	 */
 	public function is_ipn_response_valid() {
 		$result       = '';
-		$receivedHash = $this->request_params['HASH'];
-		foreach ( $this->request_params as $key => $val ) {
 
-			if ( $key != "HASH" ) {
+        $hash = $this->extractHashFromRequest();
+
+		foreach ( $this->request_params as $key => $val ) {
+			if ( !in_array($key ,[ "HASH", "SIGNATURE_SHA2_256", "SIGNATURE_SHA3_256"]) ) {
 				if ( is_array( $val ) ) {
 					$result .= $this->array_expand( $val );
 				} else {
@@ -170,9 +192,10 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 			}
 		}
 
-		if ( isset( $this->request_params['REFNO'] ) && ! empty( $this->request_params['REFNO'] ) ) {
-			$calcHash = $this->generate_hash( $this->secret_key, $result );
-			if ( $receivedHash === $calcHash ) {
+		if ( isset( $this->request_params['REFNO'] ) && ! empty($this->request_params['REFNO'] ) ) {
+			$calcHash = $this->generate_hash( $this->secret_key, $result, $hash['algo'] );
+
+			if ( $hash['hash'] === $calcHash ) {
 				return true;
 			}
 		}
@@ -188,20 +211,24 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	 *
 	 * @return string
 	 */
-	public function generate_hash( $key, $data ) {
-		$b = 64; // byte length for md5
-		if ( strlen( $key ) > $b ) {
-			$key = pack( "H*", md5( $key ) );
-		}
+    public function generate_hash($key, $data, $algo = 'sha3-256') {
+        if ('sha3-256' === $algo) {
+            return hash_hmac($algo, $data, $key);
+        }
 
-		$key    = str_pad( $key, $b, chr( 0x00 ) );
-		$ipad   = str_pad( '', $b, chr( 0x36 ) );
-		$opad   = str_pad( '', $b, chr( 0x5c ) );
-		$k_ipad = $key ^ $ipad;
-		$k_opad = $key ^ $opad;
+        $b = 64; // byte length for hash
+        if (strlen($key) > $b) {
+            $key = pack("H*", hash($algo, $key));
+        }
 
-		return md5( $k_opad . pack( "H*", md5( $k_ipad . $data ) ) );
-	}
+        $key = str_pad($key, $b, chr(0x00));
+        $ipad = str_pad('', $b, chr(0x36));
+        $opad = str_pad('', $b, chr(0x5c));
+        $k_ipad = $key ^ $ipad;
+        $k_opad = $key ^ $opad;
+
+        return hash($algo, $k_opad . pack("H*", hash($algo, $k_ipad . $data)));
+    }
 
 	/**
 	 * @param $array
@@ -222,6 +249,8 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	 * @return string
 	 */
 	public function process_ipn() {
+        $hash = $this->extractHashFromRequest();
+
 		try {
 			if ( ! isset( $this->request_params['REFNO'] ) && empty( $this->request_params['REFNO'] ) ) {
 				self::log( 'Cannot identify order: "%s".', $this->request_params['REFNOEXT'] );
@@ -234,13 +263,13 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 			if ( $this->wc_order->get_id() ) {
 				$this->_process_fraud();
 				if ( ! $this->_is_fraud() ) {
-					$this->_processorder_status();
+					$this->processorder_status($this->request_params['ORDERSTATUS'], $this->request_params['REFNO']);
 				}
 			}
 		} catch ( Exception $ex ) {
 			self::log( 'Exception processing IPN: ' . $ex->getMessage() );
 		}
-		echo $this->_calculate_ipn_response();
+		echo $this->_calculate_ipn_response($hash['algo']);
 		exit();
 	}
 
@@ -307,7 +336,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	/**
 	 * @return string
 	 */
-	private function _calculate_ipn_response() {
+	private function _calculate_ipn_response($algo='sha3-256') {
 		$resultResponse      = '';
 		$ipn_params_response = [];
 		// we're assuming that these always exist, if they don't then the problem is on avangate side
@@ -320,11 +349,19 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 			$resultResponse .= $this->array_expand( (array) $val );
 		}
 
-		return sprintf(
-			'<EPAYMENT>%s|%s</EPAYMENT>',
-			$ipn_params_response['DATE'],
-			$this->generate_hash( $this->secret_key, $resultResponse )
-		);
+        if ('md5' === $algo)
+            return sprintf(
+                '<EPAYMENT>%s|%s</EPAYMENT>',
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $resultResponse, $algo)
+            );
+        else
+            return sprintf(
+                '<sig algo="%s" date="%s">%s</sig>',
+                $algo,
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $resultResponse, $algo)
+            );
 	}
 
 	/**
@@ -337,8 +374,7 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 	/**
 	 * @throws Exception
 	 */
-	protected function _processorder_status() {
-		$order_status = $this->request_params['ORDERSTATUS'];
+	public function processorder_status(string $order_status, string $refNo) {
 		if ( ! empty( $order_status ) ) {
 			switch ( trim( $order_status ) ) {
 				case self::ORDER_STATUS_PENDING:
@@ -350,7 +386,6 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 					}
 					break;
 
-
 				case self::ORDER_STATUS_PAYMENT_AUTHORIZED:
 					if ( ! $this->_is_order_pending() && ! $this->_is_order_processing() && ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
 						$this->wc_order->update_status( 'pending' );
@@ -359,22 +394,24 @@ class WC_Twocheckout_Convert_Plus_Ipn_Helper {
 					break;
 
 				case self::ORDER_STATUS_COMPLETE:
+                case self::ORDER_STATUS_AUTH_RECEIVED:
 					if ( ! $this->_is_order_completed() && ! $this->_is_order_refunded() ) {
-						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $this->request_params['REFNO'] );
+						$this->wc_order->update_meta_data( self::TCO_ORDER_REFERENCE, $refNo );
 						$this->wc_order->save_meta_data();
 						$this->wc_order->payment_complete();
 						if ( $this->getCompleteOrderOnPayment() ) {
 							$this->wc_order->update_status( 'completed' );
 						}
-						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $this->request_params['REFNO'] ), false, false );
+						$this->wc_order->add_order_note( __( '2Checkout transaction ID: ' . $refNo ), false, false );
 						$this->wc_order->add_order_note( __( "Order payment is completed." ), false, false );
-						$this->wc_order->save();
 					}
 					break;
 
 				default:
-					throw new Exception( 'Cannot handle Ipn message type for this request!' );
+					throw new Exception( 'Cannot handle the order status ' . $order_status . '!' );
 			}
+
+            $this->wc_order->save();
 		}
 	}
 

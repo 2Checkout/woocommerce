@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Convert Plus Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.2.1
+  Version: 2.3.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -284,7 +284,7 @@ function woocommerce_twocheckout_convert_plus() {
 					$order_params['shipping_data'],
 					$order_params['billing_data']
 				);
-				$helper                       = new WC_Twocheckout_Convert_Plus_Ipn_Helper( $buy_link_params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+				$helper                       = new WC_Twocheckout_Convert_Plus_Helper( $buy_link_params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
 				$buy_link_params['signature'] = $helper->get_signature( $this->seller_id, $this->secret_word );
 				$pay_url                      = 'https://secure.2checkout.com/checkout/buy?' . http_build_query( $buy_link_params );
 
@@ -316,7 +316,7 @@ function woocommerce_twocheckout_convert_plus() {
 			if ( $order->get_payment_method() == self::PAYMENT_METHOD_ID ) {
 				$transaction_id = $order->get_meta( '__2co_order_number' );
 
-				require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+                require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
 				$api = new Two_Checkout_Api();
 				$api->set_seller_id( $this->seller_id );
 				$api->set_secret_key( $this->secret_key );
@@ -502,14 +502,13 @@ function woocommerce_twocheckout_convert_plus() {
 				if ( $order && $order->get_payment_method() == self::PAYMENT_METHOD_ID ) {
 					$this->load_helper();
 					try {
-						$helper = new WC_Twocheckout_Convert_Plus_Ipn_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug,
-							$order );
+						$helper = new WC_Twocheckout_Convert_Plus_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
 					} catch ( Exception $ex ) {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}
 					if ( ! $helper->is_ipn_response_valid() ) {
-						self::log( sprintf( 'MD5 hash mismatch for 2Checkout IPN with date: "%s" . ',
+						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );
 						echo 'Bad Hash!';
 
@@ -547,8 +546,13 @@ function woocommerce_twocheckout_convert_plus() {
 			}
 
 			$refNo = $params['refno'];
-			require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
-			$api = new Two_Checkout_Api();
+
+            $this->load_helper();
+            $helper = new WC_Twocheckout_Convert_Plus_Helper( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
+
+            require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/TwoCheckoutApi.php';
+            $api = new Two_Checkout_Api();
+
 			$api->set_seller_id( $this->seller_id );
 			$api->set_secret_key( $this->secret_key );
 			$api_response = $api->call( 'orders/' . $refNo . '/', [], 'GET' );
@@ -560,14 +564,13 @@ function woocommerce_twocheckout_convert_plus() {
 				$this->log( 'Api did not respond with expected result' );
 				$this->go_to_404_page();
 			}
-			$order->add_order_note( __( '2Checkout transaction ID: ' . $api_response['RefNo'] ), false, false );
 			$redirect_url = $order->get_checkout_order_received_url();
 			if ( wp_redirect( $redirect_url ) ) {
-				if ( $order->has_status( 'pending' ) ) {
-					$order->update_meta_data( '__2co_order_number', $params['refno'] );
-					$order->save_meta_data();
-					$order->save();
-				}
+                try {
+                    $helper->processorder_status($api_response['Status'],(string)$api_response['RefNo']);
+                } catch (\Exception $e) {
+                    self::$log->add('twocheckout', __CLASS__ . ' line ' . __LINE__ . ' : ' . $e->getMessage());
+                }
 				global $woocommerce;
 				$woocommerce->cart->empty_cart();
 			}
@@ -594,3 +597,9 @@ function woocommerce_twocheckout_convert_plus() {
 		'add_twocheckout_gateway_convert_plus' );
 
 }
+
+add_action( 'before_woocommerce_init', function() {
+    if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __DIR__.'/'.__FILE__, true );
+    }
+} );

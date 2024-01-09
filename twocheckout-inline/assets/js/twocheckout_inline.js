@@ -130,15 +130,18 @@ jQuery(document).on("change", "form[id='order_review'] input[name='payment_metho
     }
 });
 
-
 jQuery(window).on('load', function () {
     if (jQuery('form.woocommerce-checkout').length) {
-        jQuery( document.body ).on( 'updated_checkout', function() {
-            jQuery("form.woocommerce-checkout").unbind('submit');
-            jQuery("form.woocommerce-checkout").on('submit', prepareInlinePay);
+        jQuery(document.body).on('updated_checkout', function () {
+            if (jQuery("#payment_method_twocheckout_inline").is(':checked')) {
+                jQuery("form.woocommerce-checkout").unbind('submit');
+                jQuery("form.woocommerce-checkout").on('submit', prepareInlinePay);
+            }
         });
-    } else if (jQuery( 'form#add_payment_method' ).length || jQuery( 'form#order_review' ).length ) {
-        jQuery("form#order_review").unbind('submit');
-        jQuery("form#order_review").on('submit', prepareInlinePay);
+    } else if (jQuery('form#add_payment_method').length || jQuery('form#order_review').length) {
+        if (jQuery("#payment_method_twocheckout_inline").is(':checked')) {
+            jQuery("form#order_review").unbind('submit');
+            jQuery("form#order_review").on('submit', prepareInlinePay);
+        }
     }
 });

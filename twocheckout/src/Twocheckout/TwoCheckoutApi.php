@@ -90,11 +90,11 @@ class Two_Checkout_Api {
 		}
 		$gmt_date = gmdate( 'Y-m-d H:i:s' );
 		$string   = strlen( $this->seller_id ) . $this->seller_id . strlen( $gmt_date ) . $gmt_date;
-		$hash     = hash_hmac( 'md5', $string, $this->secret_key );
+		$hash     = hash_hmac( 'sha3-256', $string, $this->secret_key );
 
 		$headers[] = 'Content-Type: application/json';
 		$headers[] = 'Accept: application/json';
-		$headers[] = 'X-Avangate-Authentication: code="' . $this->seller_id . '" date="' . $gmt_date . '" hash="' . $hash . '"';;
+		$headers[] = 'X-Avangate-Authentication: code="' . $this->seller_id . '" date="' . $gmt_date . '" hash="' . $hash . '" algo="sha3-256"';
 
 		return $headers;
 	}
