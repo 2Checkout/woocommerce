@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Inline Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.3.0
+  Version: 2.3.1
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -129,7 +129,7 @@ function woocommerce_twocheckout_inline() {
 		//enqueue a script
 		function enqueue_script() {
 			wp_enqueue_script( 'twocheckout_inline_script',
-				'/wp-content/plugins/twocheckout-inline/assets/js/twocheckout_inline.js' );
+				'/wp-content/plugins/twocheckout-inline/assets/js/twocheckout_inline.js', ['jquery'] );
 		}
 
 		/**
@@ -548,7 +548,11 @@ function woocommerce_twocheckout_inline() {
 			if ( $_SERVER['REQUEST_METHOD'] !== 'POST' ) {
 				return;
 			}
+
 			$params = $_POST;
+            if(empty($params))
+                $params=json_decode(file_get_contents('php://input'),true);
+
 			unset( $params['wc-api'] );
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );

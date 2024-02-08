@@ -131,7 +131,7 @@ final class Two_Checkout_Ipn_Helper {
 	/**
 	 * @return string
 	 */
-	private function _calculate_ipn_response() {
+	private function _calculate_ipn_response($algo='sha3-256') {
 		$result_response     = '';
 		$ipn_params_response = [];
 		// we're assuming that these always exist, if they don't then the problem is on avangate side
@@ -144,11 +144,19 @@ final class Two_Checkout_Ipn_Helper {
 			$result_response .= $this->array_expand( (array) $val );
 		}
 
-		return sprintf(
-			'<EPAYMENT>%s|%s</EPAYMENT>',
-			$ipn_params_response['DATE'],
-			$this->generate_hash( $this->secret_key, $result_response )
-		);
+        if ('md5' === $algo)
+            return sprintf(
+                '<EPAYMENT>%s|%s</EPAYMENT>',
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $result_response, $algo)
+            );
+        else
+            return sprintf(
+                '<sig algo="%s" date="%s">%s</sig>',
+                $algo,
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $result_response, $algo)
+            );
 	}
 
 	/**
@@ -214,7 +222,7 @@ final class Two_Checkout_Ipn_Helper {
 		$receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
 
         if(!$receivedHash){
-            $receivedAlgo='sha2-256';
+            $receivedAlgo='sha256';
             $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
         }
 
@@ -276,6 +284,7 @@ final class Two_Checkout_Ipn_Helper {
 	 * @return string
 	 */
 	public function process_ipn() {
+        $hash = $this->extractHashFromRequest();
 		try {
 			if ( ! isset( $this->request_params['REFNO'] ) && empty( $this->request_params['REFNO'] ) ) {
 				self::log( 'Cannot identify order: "%s".', $this->request_params['REFNOEXT'] );
@@ -294,7 +303,7 @@ final class Two_Checkout_Ipn_Helper {
 		} catch ( Exception $ex ) {
 			self::log( 'Exception processing IPN: ' . $ex->getMessage() );
 		}
-		echo $this->_calculate_ipn_response();
+        echo $this->_calculate_ipn_response($hash['algo']);
 		exit();
 	}
 
@@ -326,4 +335,25 @@ final class Two_Checkout_Ipn_Helper {
 
 		return $retval;
 	}
+
+    /**
+     * @return array    [hash, algo]
+     */
+    protected function extractHashFromRequest():array {
+        $receivedAlgo = 'sha3-256';
+        $receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'sha256';
+            $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
+        }
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'md5';
+            $receivedHash = $this->request_params['HASH'];
+        }
+
+        return ['hash' => $receivedHash, 'algo' => $receivedAlgo];
+    }
+
 }

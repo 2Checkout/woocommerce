@@ -3,7 +3,7 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.3.0
+  Version: 2.3.1
   Author: 2Checkout
   Author URI: https://www.2checkout.com
  */
@@ -141,8 +141,8 @@ function woocommerce_twocheckout() {
 		 */
 		public function payment_fields() {
 
-			wp_enqueue_script( '2payjs', 'https://2pay-js.2checkout.com/v1/2pay.js' );
-			wp_enqueue_script( 'twocheckout_script', '/wp-content/plugins/twocheckout/assets/js/twocheckout.js' );
+			wp_enqueue_script( '2payjs', 'https://2pay-js.2checkout.com/v1/2pay.js', ['jquery'] );
+			wp_enqueue_script( 'twocheckout_script', '/wp-content/plugins/twocheckout/assets/js/twocheckout.js', ['jquery'] );
 			wp_enqueue_style( 'twocheckout_style', '/wp-content/plugins/twocheckout/assets/css/twocheckout.css' );
 			$twocheckout_is_checkout = ( is_checkout() && empty( $_GET['pay_for_order'] ) ) ? 'yes' : 'no';
 			require_once plugin_dir_path( __FILE__ ) . 'templates/payment-fields.php';
@@ -602,9 +602,13 @@ function woocommerce_twocheckout() {
 				return;
 			}
 			$params = $_POST;
+            if(empty($params))
+                $params=json_decode(file_get_contents('php://input'),true);
+
 			unset( $params['wc-api'] );
 			if ( isset( $params['REFNOEXT'] ) && ! empty( $params['REFNOEXT'] ) ) {
 				$order = wc_get_order( $params['REFNOEXT'] );
+
 				if ( $order && $order->get_payment_method() == 'twocheckout' ) {
 					try {
 						$ipn_helper = new Two_Checkout_Ipn_Helper_Api( $params, $this->secret_key, $this->complete_order_on_payment, $this->debug, $order );
@@ -612,6 +616,7 @@ function woocommerce_twocheckout() {
 						$this->log( 'Unable to find order with RefNo: ' . $params['REFNOEXT'] );
 						throw new Exception( 'An error occurred!' );
 					}
+
 					if ( ! $ipn_helper->is_ipn_response_valid() ) {
 						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );

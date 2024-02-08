@@ -171,6 +171,26 @@ final class Two_Checkout_Ipn_Helper_Api {
 		}
 	}
 
+    /**
+     * @return array    [hash, algo]
+     */
+    protected function extractHashFromRequest():array {
+        $receivedAlgo = 'sha3-256';
+        $receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'sha256';
+            $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
+        }
+
+        if (!$receivedHash) {
+            $receivedAlgo = 'md5';
+            $receivedHash = $this->request_params['HASH'];
+        }
+
+        return ['hash' => $receivedHash, 'algo' => $receivedAlgo];
+    }
+
 	/**
 	 * Validate Ipn request
 	 * @return bool
@@ -178,21 +198,9 @@ final class Two_Checkout_Ipn_Helper_Api {
 	public function is_ipn_response_valid() {
 		$result        = '';
 
-        $receivedAlgo='sha3-256';
-        $receivedHash = $this->request_params['SIGNATURE_SHA3_256'];
-
-        if(!$receivedHash){
-            $receivedAlgo='sha256';
-            $receivedHash = $this->request_params['SIGNATURE_SHA2_256'];
-        }
-
-        if(!$receivedHash){
-            $receivedAlgo='md5';
-            $receivedHash = $this->request_params['HASH'];
-        }
+        $hash = $this->extractHashFromRequest();
 
 		foreach ( $this->request_params as $key => $val ) {
-
 			if ( !in_array($key ,["HASH", "SIGNATURE_SHA2_256", "SIGNATURE_SHA3_256"]) ) {
 				if ( is_array( $val ) ) {
 					$result .= $this->array_expand( $val );
@@ -204,8 +212,8 @@ final class Two_Checkout_Ipn_Helper_Api {
 		}
 
 		if ( isset( $this->request_params['REFNO'] ) && ! empty( $this->request_params['REFNO'] ) ) {
-			$calc_hash = $this->generate_hash( $this->secret_key, $result, $receivedAlgo );
-			if ( $receivedHash === $calc_hash ) {
+			$calc_hash = $this->generate_hash( $this->secret_key, $result, $hash['algo'] );
+			if ( $hash['hash'] === $calc_hash ) {
 				return true;
 			}
 		}
@@ -258,6 +266,8 @@ final class Two_Checkout_Ipn_Helper_Api {
 	 * @return string
 	 */
 	public function process_ipn() {
+        $hash = $this->extractHashFromRequest();
+
 		try {
 			if ( ! isset( $this->request_params['REFNO'] ) && empty( $this->request_params['REFNO'] ) ) {
 				self::log( 'Cannot identify order: "%s".', $this->request_params['REFNOEXT'] );
@@ -276,7 +286,7 @@ final class Two_Checkout_Ipn_Helper_Api {
 		} catch ( Exception $ex ) {
 			self::log( 'Exception processing IPN: ' . $ex->getMessage() );
 		}
-		echo $this->_calculate_ipn_response();
+		echo $this->_calculate_ipn_response($hash['algo']);
 		exit();
 	}
 
@@ -305,26 +315,34 @@ final class Two_Checkout_Ipn_Helper_Api {
 		}
 	}
 
-	/**
-	 * @return string
-	 */
-	private function _calculate_ipn_response() {
-		$result_response     = '';
-		$ipn_params_response = [];
-		// we're assuming that these always exist, if they don't then the problem is on avangate side
-		$ipn_params_response['IPN_PID'][0]   = $this->request_params['IPN_PID'][0];
-		$ipn_params_response['IPN_PNAME'][0] = $this->request_params['IPN_PNAME'][0];
-		$ipn_params_response['IPN_DATE']     = $this->request_params['IPN_DATE'];
-		$ipn_params_response['DATE']         = date( 'YmdHis' );
+    /**
+     * @return string
+     */
+    private function _calculate_ipn_response($algo='sha3-256') {
+        $resultResponse      = '';
+        $ipn_params_response = [];
+        // we're assuming that these always exist, if they don't then the problem is on avangate side
+        $ipn_params_response['IPN_PID'][0]   = $this->request_params['IPN_PID'][0];
+        $ipn_params_response['IPN_PNAME'][0] = $this->request_params['IPN_PNAME'][0];
+        $ipn_params_response['IPN_DATE']     = $this->request_params['IPN_DATE'];
+        $ipn_params_response['DATE']         = date( 'YmdHis' );
 
-		foreach ( $ipn_params_response as $key => $val ) {
-			$result_response .= $this->array_expand( (array) $val );
-		}
+        foreach ( $ipn_params_response as $key => $val ) {
+            $resultResponse .= $this->array_expand( (array) $val );
+        }
 
-		return sprintf(
-			'<EPAYMENT>%s|%s</EPAYMENT>',
-			$ipn_params_response['DATE'],
-			$this->generate_hash( $this->secret_key, $result_response )
-		);
-	}
+        if ('md5' === $algo)
+            return sprintf(
+                '<EPAYMENT>%s|%s</EPAYMENT>',
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $resultResponse, $algo)
+            );
+        else
+            return sprintf(
+                '<sig algo="%s" date="%s">%s</sig>',
+                $algo,
+                $ipn_params_response['DATE'],
+                $this->generate_hash($this->secret_key, $resultResponse, $algo)
+            );
+    }
 }
