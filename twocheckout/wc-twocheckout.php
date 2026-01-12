@@ -3,9 +3,10 @@
   Plugin Name: 2Checkout Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.3.1
+  Version: 2.4.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
+  Requires Plugins: woocommerce
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -353,9 +354,9 @@ function woocommerce_twocheckout() {
 					'Source'            => 'WOOCOMMERCE_' . $woocommerce_version_formatted,
 					'ExternalReference' => $order_id,
 					'Items'             => $this->get_item( $total ),
-					'BillingDetails'    => $this->get_billing_details( $post_data, $country_code ),
+					'BillingDetails'    => $this->get_billing_details_from_order( $order ),
 					'PaymentDetails'    => $this->get_payment_details(
-						$post_data['ess_token'],
+						isset( $post_data['ess_token'] ) ? $post_data['ess_token'] : ( isset( $post_data['payment_data']['ess_token'] ) ? $post_data['payment_data']['ess_token'] : '' ),
 						$customer_ip,
 						add_query_arg( 'wc-api', 'payment_response', home_url( '/' ) ) . "&pm={$order->get_payment_method()}" . "&order-ext-ref={$order->get_id()}",
 						wc_get_cart_url()
@@ -465,6 +466,34 @@ function woocommerce_twocheckout() {
 
 			if ( $post_data['billing_address_2'] ) {
 				$address['Address2'] = $post_data['billing_address_2'];
+			}
+
+			return $address;
+		}
+
+		/**
+		 * Get billing details from WC_Order object (for blocks checkout)
+		 *
+		 * @param WC_Order $order
+		 *
+		 * @return array
+		 */
+		private function get_billing_details_from_order( $order ) {
+			$address = [
+				'Address1'    => $order->get_billing_address_1(),
+				'City'        => $order->get_billing_city(),
+				'State'       => $order->get_billing_state(),
+				'CountryCode' => strtoupper( $order->get_billing_country() ),
+				'Email'       => $order->get_billing_email(),
+				'FirstName'   => $order->get_billing_first_name(),
+				'LastName'    => $order->get_billing_last_name(),
+				'Phone'       => $order->get_billing_phone(),
+				'Zip'         => $order->get_billing_postcode(),
+				'Company'     => $order->get_billing_company()
+			];
+
+			if ( $order->get_billing_address_2() ) {
+				$address['Address2'] = $order->get_billing_address_2();
 			}
 
 			return $address;
@@ -618,7 +647,7 @@ function woocommerce_twocheckout() {
 					}
 
 					if ( ! $ipn_helper->is_ipn_response_valid() ) {
-						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
+						self::log( sprintf( 'Hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );
 
 						return;
@@ -670,6 +699,25 @@ function woocommerce_twocheckout() {
 
 add_action( 'before_woocommerce_init', function() {
     if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __DIR__.'/'.__FILE__, true );
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'cart_checkout_blocks', __FILE__, true );
     }
+} );
+
+/**
+ * Register the payment method for WooCommerce Blocks
+ */
+add_action( 'woocommerce_blocks_loaded', function() {
+	if ( ! class_exists( 'Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType' ) ) {
+		return;
+	}
+
+	require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/Blocks/TwocheckoutBlocksIntegration.php';
+
+	add_action(
+		'woocommerce_blocks_payment_method_type_registration',
+		function( Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $payment_method_registry ) {
+			$payment_method_registry->register( new Twocheckout\Blocks\TwocheckoutBlocksIntegration() );
+		}
+	);
 } );

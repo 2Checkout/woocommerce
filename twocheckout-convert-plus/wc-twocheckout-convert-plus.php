@@ -3,9 +3,10 @@
   Plugin Name: 2Checkout Convert Plus Payment Gateway
   Plugin URI:
   Description: Allows you to use 2Checkout payment gateway with the WooCommerce plugin.
-  Version: 2.3.1
+  Version: 2.4.0
   Author: 2Checkout
   Author URI: https://www.2checkout.com
+  Requires Plugins: woocommerce
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -508,7 +509,7 @@ function woocommerce_twocheckout_convert_plus() {
 						throw new Exception( 'An error occurred!' );
 					}
 					if ( ! $helper->is_ipn_response_valid() ) {
-						self::log( sprintf( 'SHA3 hash mismatch for 2Checkout IPN with date: "%s" . ',
+						self::log( sprintf( 'Hash mismatch for 2Checkout IPN with date: "%s" . ',
 							$params['IPN_DATE'] ) );
 						echo 'Bad Hash!';
 
@@ -600,6 +601,25 @@ function woocommerce_twocheckout_convert_plus() {
 
 add_action( 'before_woocommerce_init', function() {
     if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
-        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __DIR__.'/'.__FILE__, true );
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'custom_order_tables', __FILE__, true );
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility( 'cart_checkout_blocks', __FILE__, true );
     }
+} );
+
+/**
+ * Register the payment method for WooCommerce Blocks
+ */
+add_action( 'woocommerce_blocks_loaded', function() {
+	if ( ! class_exists( 'Automattic\WooCommerce\Blocks\Payments\Integrations\AbstractPaymentMethodType' ) ) {
+		return;
+	}
+
+	require_once plugin_dir_path( __FILE__ ) . 'src/Twocheckout/Blocks/TwocheckoutConvertPlusBlocksIntegration.php';
+
+	add_action(
+		'woocommerce_blocks_payment_method_type_registration',
+		function( Automattic\WooCommerce\Blocks\Payments\PaymentMethodRegistry $payment_method_registry ) {
+			$payment_method_registry->register( new Twocheckout\Blocks\TwocheckoutConvertPlusBlocksIntegration() );
+		}
+	);
 } );
